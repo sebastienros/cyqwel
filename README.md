@@ -4,12 +4,15 @@ Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutabl
 
 ## Features
 
-- Shared AST for Generic SQL, T-SQL, SQLite, PostgreSQL, and MySQL
+- Shared AST for Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, and Oracle
 - Reusable, compiled [Parlot](https://github.com/sebastienros/parlot) parser graphs cached by dialect configuration
 - Strict dialect parsing with distinct quote, parameter, operator, clause, and DML rules
 - Read-only visitor, non-mutating rewriter, depth-first and breadth-first traversal
 - Dialect-aware generation and transpilation
 - Window functions with `OVER`, `PARTITION BY`, and window ordering
+- Window frames, named window definitions, aggregate `FILTER`, and `WITHIN GROUP`
+- `VALUES` queries, `MERGE`, extended DML, and core relational DDL
+- Oracle bind variables, `MINUS`, sequences, hierarchical queries, and row limiting
 - Public dialect base class, registry, and fluent custom dialect builder
 - Custom literal and argument-aware function rendering hooks
 - Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
@@ -102,4 +105,12 @@ Custom dialects inherit the base dialect's parser configuration and can modify o
 
 ## Supported SQL surface
 
-Cyqwel currently handles SELECT projections and aliases, joins, predicates, grouping, ordering, row limits, CTEs, set operations, INSERT VALUES/SELECT, UPDATE, DELETE, RETURNING, functions, CASE, CAST, subqueries, parameters, and common unary and binary operators. The AST and dialect hooks are designed to add syntax without coupling transformations to a specific parser or generator.
+Cyqwel handles:
+
+- Queries: `SELECT`, `VALUES`, joins with `ON` or `USING`, natural joins, predicates, grouping, ordering, row limits, recursive/materialized CTEs, named windows, window frames, and set operations.
+- Expressions: functions and aggregate modifiers, `CASE`, `CAST`/`TRY_CAST`, rows, intervals, extraction, collation, sequences, subqueries, parameters, boolean tests, and common unary and binary operators.
+- DML: `INSERT VALUES`/`SELECT`, `UPDATE ... FROM`, `DELETE ... USING`, `MERGE`, `RETURNING`, and Oracle `RETURNING ... INTO`.
+- DDL: create/alter/drop/truncate tables, columns and common constraints, views, indexes, and sequences.
+- Oracle: colon bind variables, `MINUS`, `FETCH FIRST`, `NEXTVAL`/`CURRVAL`, `START WITH`/`CONNECT BY`, `PRIOR`, `ORDER SIBLINGS BY`, and common function normalization.
+
+The built-in scope targets standard relational databases. Warehouse-only statements and engine-specific administration commands remain outside the shared AST unless they overlap common RDBMS SQL.

@@ -49,8 +49,12 @@ public sealed record SqlDialectParserOptions
         SupportsOffsetOnly = true,
         SupportsOffsetFetch = true,
         SupportsReturning = true,
+        SupportsReturningInto = true,
         SupportsILike = true,
         SupportsNullOrdering = true,
+        SupportsMinus = true,
+        SupportsRecursiveCte = true,
+        SupportsHierarchicalQueries = true,
         DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
     };
 
@@ -78,9 +82,19 @@ public sealed record SqlDialectParserOptions
 
     public bool SupportsReturning { get; init; }
 
+    public bool SupportsReturningInto { get; init; }
+
     public bool SupportsILike { get; init; }
 
     public bool SupportsNullOrdering { get; init; } = true;
+
+    public bool SupportsMinus { get; init; }
+
+    public bool SupportsRecursiveCte { get; init; } = true;
+
+    public bool SupportsHierarchicalQueries { get; init; }
+
+    public bool SupportsTableAliasAs { get; init; } = true;
 
     public SqlDoublePipeBehavior DoublePipeBehavior { get; init; } = SqlDoublePipeBehavior.Concatenate;
 }

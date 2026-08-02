@@ -5,7 +5,7 @@ namespace Cyqwel.Visitors;
 /// <summary>
 /// Traverses SQL nodes without modifying them. Override typed methods to analyze selected nodes.
 /// </summary>
-public abstract class SqlVisitor
+public abstract partial class SqlVisitor
 {
     public virtual void Visit(SqlNode node)
     {
@@ -15,10 +15,20 @@ public abstract class SqlVisitor
         {
             case SqlDocument value: VisitDocument(value); break;
             case SelectStatement value: VisitSelect(value); break;
+            case ValuesStatement value: VisitValues(value); break;
             case SetOperationStatement value: VisitSetOperation(value); break;
             case InsertStatement value: VisitInsert(value); break;
             case UpdateStatement value: VisitUpdate(value); break;
             case DeleteStatement value: VisitDelete(value); break;
+            case MergeStatement value: VisitMerge(value); break;
+            case CreateTableStatement value: VisitCreateTable(value); break;
+            case AlterTableStatement value: VisitAlterTable(value); break;
+            case DropStatement value: VisitDrop(value); break;
+            case TruncateStatement value: VisitTruncate(value); break;
+            case CreateViewStatement value: VisitCreateView(value); break;
+            case CreateIndexStatement value: VisitCreateIndex(value); break;
+            case CreateSequenceStatement value: VisitCreateSequence(value); break;
+            case AlterSequenceStatement value: VisitAlterSequence(value); break;
             case SqlIdentifier value: VisitIdentifier(value); break;
             case ColumnExpression value: VisitColumn(value); break;
             case StarExpression value: VisitStar(value); break;
@@ -30,6 +40,14 @@ public abstract class SqlVisitor
             case BetweenExpression value: VisitBetween(value); break;
             case InExpression value: VisitIn(value); break;
             case IsNullExpression value: VisitIsNull(value); break;
+            case BooleanTestExpression value: VisitBooleanTest(value); break;
+            case DistinctFromExpression value: VisitDistinctFrom(value); break;
+            case RowExpression value: VisitRow(value); break;
+            case DefaultExpression value: VisitDefault(value); break;
+            case CollateExpression value: VisitCollate(value); break;
+            case ExtractExpression value: VisitExtract(value); break;
+            case IntervalExpression value: VisitInterval(value); break;
+            case SequenceValueExpression value: VisitSequenceValue(value); break;
             case FunctionCallExpression value: VisitFunctionCall(value); break;
             case WindowExpression value: VisitWindow(value); break;
             case ExistsExpression value: VisitExists(value); break;
@@ -37,6 +55,7 @@ public abstract class SqlVisitor
             case WhenClause value: VisitWhen(value); break;
             case CaseExpression value: VisitCase(value); break;
             case CastExpression value: VisitCast(value); break;
+            case TryCastExpression value: VisitTryCast(value); break;
             case SqlDataType value: VisitDataType(value); break;
             case TableName value: VisitTableName(value); break;
             case NamedTable value: VisitNamedTable(value); break;
@@ -46,6 +65,28 @@ public abstract class SqlVisitor
             case OrderByItem value: VisitOrderByItem(value); break;
             case CommonTableExpression value: VisitCommonTableExpression(value); break;
             case Assignment value: VisitAssignment(value); break;
+            case WindowDefinition value: VisitWindowDefinition(value); break;
+            case WindowFrame value: VisitWindowFrame(value); break;
+            case WindowFrameBound value: VisitWindowFrameBound(value); break;
+            case ConnectByClause value: VisitConnectBy(value); break;
+            case MergeWhenClause value: VisitMergeWhen(value); break;
+            case MergeUpdateAction value: VisitMergeUpdate(value); break;
+            case MergeInsertAction value: VisitMergeInsert(value); break;
+            case MergeDeleteAction value: VisitMergeDelete(value); break;
+            case ColumnDefinition value: VisitColumnDefinition(value); break;
+            case PrimaryKeyConstraint value: VisitPrimaryKeyConstraint(value); break;
+            case UniqueConstraint value: VisitUniqueConstraint(value); break;
+            case ForeignKeyConstraint value: VisitForeignKeyConstraint(value); break;
+            case CheckConstraint value: VisitCheckConstraint(value); break;
+            case AddColumnAction value: VisitAddColumn(value); break;
+            case DropColumnAction value: VisitDropColumn(value); break;
+            case AlterColumnAction value: VisitAlterColumn(value); break;
+            case AddConstraintAction value: VisitAddConstraint(value); break;
+            case DropConstraintAction value: VisitDropConstraint(value); break;
+            case RenameColumnAction value: VisitRenameColumn(value); break;
+            case RenameTableAction value: VisitRenameTable(value); break;
+            case IndexColumn value: VisitIndexColumn(value); break;
+            case SequenceOptions value: VisitSequenceOptions(value); break;
             default: throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'.");
         }
     }
