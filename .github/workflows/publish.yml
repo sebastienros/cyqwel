@@ -7,6 +7,10 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      id-token: write
+    environment: release
     runs-on: ubuntu-latest
     env:
       DOTNET_NOLOGO: true
@@ -30,5 +34,11 @@ jobs:
           echo "$VERSION"
           dotnet pack src/Cyqwel/Cyqwel.csproj --output artifacts --configuration Release -p:Version="$VERSION" -p:ContinuousIntegrationBuild=True
 
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push with dotnet
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
