@@ -15,6 +15,7 @@ Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutabl
 - PostgreSQL `EXPLAIN` options and SQLite date, JSON aggregate, and scalar-function rewrites
 - Oracle bind variables, `MINUS`, sequences, hierarchical queries, row limiting, and native type forms
 - Public dialect base class, registry, and fluent custom dialect builder
+- Syntax, semantic, schema, type, and relationship-aware SQL validation
 - Custom literal and argument-aware function rendering hooks
 - Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
 - Input and AST complexity guards
@@ -49,6 +50,45 @@ SqlDialects.PostgreSql.Parse("SELECT TOP 10 id FROM users"); // throws SqlParseE
 ```
 
 An otherwise recognized construct that is incompatible with the selected dialect returns `SqlParseErrorCode.DialectIncompatible`. Dialect selection also resolves ambiguous syntax in the source AST; for example, `||` becomes concatenation in PostgreSQL and SQLite but logical `OR` in MySQL.
+
+## Validate SQL
+
+`SqlValidator` returns stable diagnostics with a severity, code, message, and source location when the parser or AST provides one. Warnings do not make `IsValid` false.
+
+```csharp
+using Cyqwel.Validation;
+
+var syntax = SqlValidator.Validate(
+    "SELECT * FROM users LIMIT 10",
+    options: new SqlValidationOptions
+    {
+        StrictSyntax = true,
+        Semantic = true,
+    });
+
+var catalog = new SqlSchemaCatalog(
+    new SqlTableSchema(
+        "users",
+        [
+            new("id", "integer", IsPrimaryKey: true),
+            new("name", "varchar"),
+            new("age", "integer"),
+        ],
+        PrimaryKey: ["id"]));
+
+var schema = SqlValidator.Validate(
+    "SELECT id FROM users WHERE age > 18",
+    catalog,
+    options: new SqlSchemaValidationOptions
+    {
+        CheckTypes = true,
+        CheckReferences = true,
+    });
+```
+
+Semantic validation can flag `SELECT *`, mixed aggregate projections without `GROUP BY`, `DISTINCT` ordering concerns, and non-deterministic `LIMIT`/`OFFSET`. Schema validation resolves tables, aliases, joins, derived tables, and CTE projections. Type checks cover comparisons, arithmetic, predicates, supported function signatures, DML assignments, and set operations. Reference checks validate foreign-key metadata, ambiguous references, cartesian joins, and joins that bypass declared relationships.
+
+Schema, type, and reference findings are errors by default. Set `SqlSchemaValidationOptions.Strict` to `false` to report them as warnings. Diagnostic code constants are available from `SqlValidationCodes`, and schema type names can be normalized with `SqlTypeFamilies.Classify`.
 
 ## Build SQL
 
