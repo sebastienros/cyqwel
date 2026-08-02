@@ -207,7 +207,11 @@ public sealed partial class SqlGenerator
     private void WriteSetOperation(SetOperationStatement set)
     {
         WriteCommonTableExpressions(set.CommonTableExpressions, set.IsRecursive);
-        WriteQueryOperand(set.Left, set.Operator);
+        WriteQueryOperand(
+            set.Left,
+            set.Operator,
+            forceParentheses: set.CommonTableExpressions is { Count: > 0 }
+                && HasCommonTableExpressions(set.Left));
         ClauseBreak();
         Keyword(_dialect.GetSetOperator(set.Operator));
 
@@ -226,13 +230,23 @@ public sealed partial class SqlGenerator
     private void WriteQueryOperand(
         SqlQuery query,
         SetOperator? parentOperator = null,
-        bool isRightOperand = false)
+        bool isRightOperand = false,
+        bool forceParentheses = false)
     {
-        var parenthesize = query is SetOperationStatement child
-            && (parentOperator is null
-                || GetSetOperatorPrecedence(child.Operator) < GetSetOperatorPrecedence(parentOperator.Value)
-                || isRightOperand
-                    && GetSetOperatorPrecedence(child.Operator) == GetSetOperatorPrecedence(parentOperator.Value));
+        var parenthesize = forceParentheses
+            || HasOperandLocalModifiers(query)
+            || isRightOperand && HasCommonTableExpressions(query)
+            || query is SetOperationStatement child
+                && (parentOperator is null
+                    || GetSetOperatorPrecedence(child.Operator) < GetSetOperatorPrecedence(parentOperator.Value)
+                    || isRightOperand
+                        && GetSetOperatorPrecedence(child.Operator) == GetSetOperatorPrecedence(parentOperator.Value));
+        if (parenthesize && !_dialect.SupportsParenthesizedSetOperands)
+        {
+            Unsupported($"{_dialect.Name} cannot represent a parenthesized set operand.");
+            parenthesize = false;
+        }
+
         if (parenthesize)
         {
             _builder.Append('(');
@@ -244,6 +258,33 @@ public sealed partial class SqlGenerator
             WriteNode(query);
         }
     }
+
+    private static bool HasOperandLocalModifiers(SqlQuery query) =>
+        query switch
+        {
+            SelectStatement select =>
+                select.OrderBy is { Count: > 0 }
+                || select.Limit is not null
+                || select.Offset is not null,
+            ValuesStatement values =>
+                values.OrderBy is { Count: > 0 }
+                || values.Limit is not null
+                || values.Offset is not null,
+            SetOperationStatement set =>
+                set.OrderBy is { Count: > 0 }
+                || set.Limit is not null
+                || set.Offset is not null,
+            _ => false,
+        };
+
+    private static bool HasCommonTableExpressions(SqlQuery query) =>
+        query switch
+        {
+            SelectStatement select => select.CommonTableExpressions is { Count: > 0 },
+            ValuesStatement values => values.CommonTableExpressions is { Count: > 0 },
+            SetOperationStatement set => set.CommonTableExpressions is { Count: > 0 },
+            _ => false,
+        };
 
     private static int GetSetOperatorPrecedence(SetOperator value) =>
         value == SetOperator.Intersect ? 2 : 1;
@@ -666,7 +707,7 @@ public sealed partial class SqlGenerator
                 WriteBinary(binary, precedence);
                 break;
             case BetweenExpression between:
-                WriteExpression(between.Expression, precedence);
+                WriteExpression(between.Expression, precedence + 1);
                 Space();
                 if (between.IsNegated) Keyword("NOT ");
                 Keyword("BETWEEN");
@@ -678,7 +719,7 @@ public sealed partial class SqlGenerator
                 WriteExpression(between.Upper, precedence + 1);
                 break;
             case InExpression @in:
-                WriteExpression(@in.Expression, precedence);
+                WriteExpression(@in.Expression, precedence + 1);
                 Space();
                 if (@in.IsNegated) Keyword("NOT ");
                 Keyword("IN");
@@ -688,12 +729,12 @@ public sealed partial class SqlGenerator
                 _builder.Append(')');
                 break;
             case IsNullExpression isNull:
-                WriteExpression(isNull.Expression, precedence);
+                WriteExpression(isNull.Expression, precedence + 1);
                 Space();
                 Keyword(isNull.IsNegated ? "IS NOT NULL" : "IS NULL");
                 break;
             case BooleanTestExpression booleanTest:
-                WriteExpression(booleanTest.Expression, precedence);
+                WriteExpression(booleanTest.Expression, precedence + 1);
                 Space();
                 Keyword(booleanTest.IsNegated ? "IS NOT" : "IS");
                 Space();
@@ -706,14 +747,15 @@ public sealed partial class SqlGenerator
                 });
                 break;
             case DistinctFromExpression distinct:
-                WriteExpression(distinct.Left, precedence);
+                WriteExpression(distinct.Left, precedence + 1);
                 Space();
                 Keyword(distinct.IsNegated ? "IS NOT DISTINCT FROM" : "IS DISTINCT FROM");
                 Space();
                 WriteExpression(distinct.Right, precedence + 1);
                 break;
             case RowExpression row:
-                _builder.Append('(');
+                Keyword("ROW");
+                _builder.Append(" (");
                 WriteSeparated(row.Values, value => WriteExpression(value));
                 _builder.Append(')');
                 break;
@@ -721,7 +763,7 @@ public sealed partial class SqlGenerator
                 Keyword("DEFAULT");
                 break;
             case CollateExpression collate:
-                WriteExpression(collate.Expression, precedence);
+                WriteExpression(collate.Expression, precedence + 1);
                 Space();
                 Keyword("COLLATE");
                 Space();
@@ -809,7 +851,7 @@ public sealed partial class SqlGenerator
             UnaryOperator.ConnectByRoot => KeywordText("CONNECT_BY_ROOT") + " ",
             _ => throw new ArgumentOutOfRangeException(),
         });
-        WriteExpression(unary.Operand, GetPrecedence(unary));
+        WriteExpression(unary.Operand, GetPrecedence(unary) + 1);
     }
 
     private void WriteBinary(BinaryExpression binary, int precedence)
@@ -927,6 +969,16 @@ public sealed partial class SqlGenerator
         WriteExpression(window.Expression);
         Space();
         Keyword("OVER");
+        if (window.WindowName is not null
+            && window.PartitionBy is not { Count: > 0 }
+            && window.OrderBy is not { Count: > 0 }
+            && window.Frame is null)
+        {
+            Space();
+            WriteIdentifier(window.WindowName);
+            return;
+        }
+
         _builder.Append(" (");
         var hasClause = false;
         if (window.WindowName is not null)
@@ -1154,7 +1206,7 @@ public sealed partial class SqlGenerator
         BinaryExpression { Operator: BinaryOperator.BitwiseAnd } => 5,
         BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Concatenate } => 6,
         BinaryExpression { Operator: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo } => 7,
-        UnaryExpression => 8,
+        UnaryExpression or CollateExpression => 8,
         ParenthesizedExpression or WindowExpression or RowExpression => 9,
         _ => 9,
     };

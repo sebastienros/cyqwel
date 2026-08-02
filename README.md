@@ -180,7 +180,32 @@ var sql = query.ToSql(SqlDialects.PostgreSql);
 // WHERE u.age > @minimumAge ORDER BY u.name ASC LIMIT 10
 ```
 
-Builders are available for `SELECT`, set operations, `INSERT`, `UPDATE`, `DELETE`, `CASE`, and expressions.
+Builders cover every statement represented by the syntax tree, including advanced queries,
+data modification, and DDL. Query builders compose through their built syntax trees:
+
+```csharp
+var ranked = Sql.SelectItems(
+        new SelectItem(
+            Sql.Func("ROW_NUMBER").Over(
+                partitionBy: [Sql.Col("region")],
+                orderBy: [Sql.Order(Sql.Col("amount"), OrderDirection.Descending)]),
+            "position"))
+    .From("sales")
+    .With("active_regions", Sql.Select("id").From("regions").Build())
+    .Qualify(Sql.Col("position").LessThanOrEqualTo(Sql.Lit(3)))
+    .Build();
+
+var combined = ranked
+    .ToSql(SqlDialects.PostgreSql);
+```
+
+The fluent API supports recursive and materialized CTEs, `UNION` / `INTERSECT` /
+`EXCEPT`, `VALUES`, named and inline windows, `QUALIFY`, hierarchical queries,
+advanced joins, `EXPLAIN`, `MERGE`, `UPDATE FROM`, `DELETE USING`,
+`RETURNING INTO`, and all supported DDL statements.
+
+Builder helpers only expose forms that can be parsed by at least one built-in
+dialect, so generated builder SQL can round-trip through the syntax tree.
 
 ## Extend dialects
 

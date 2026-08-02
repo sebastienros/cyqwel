@@ -151,6 +151,41 @@ public sealed record FunctionCallExpression(
         : this(new SqlIdentifier(name), arguments)
     {
     }
+
+    public FunctionCallExpression Distinct(bool value = true) => this with { IsDistinct = value };
+
+    public FunctionCallExpression FilterWhere(SqlExpression predicate) =>
+        this with
+        {
+            Filter = predicate ?? throw new ArgumentNullException(nameof(predicate)),
+        };
+
+    public FunctionCallExpression WithinGroupBy(params OrderByItem[] orderBy)
+    {
+        ArgumentNullException.ThrowIfNull(orderBy);
+        if (orderBy.Length == 0)
+        {
+            throw new ArgumentException("At least one ordering expression is required.", nameof(orderBy));
+        }
+
+        return this with { WithinGroup = orderBy };
+    }
+
+    public WindowExpression Over(
+        IReadOnlyList<SqlExpression>? partitionBy = null,
+        IReadOnlyList<OrderByItem>? orderBy = null,
+        WindowFrame? frame = null) =>
+        new(this, partitionBy, orderBy, frame);
+
+    public WindowExpression Over(string windowName) =>
+        new(this, WindowName: new SqlIdentifier(windowName));
+
+    public WindowExpression Over(
+        string windowName,
+        IReadOnlyList<SqlExpression>? partitionBy,
+        IReadOnlyList<OrderByItem>? orderBy = null,
+        WindowFrame? frame = null) =>
+        new(this, partitionBy, orderBy, frame, new SqlIdentifier(windowName));
 }
 
 public sealed record WindowExpression(

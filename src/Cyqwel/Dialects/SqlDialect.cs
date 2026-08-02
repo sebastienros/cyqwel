@@ -72,6 +72,8 @@ public class SqlDialect
 
     public virtual bool SupportsExplain => ParserOptions.SupportsExplainOptions;
 
+    public virtual bool SupportsParenthesizedSetOperands => true;
+
     public virtual bool UsesSqlSecurityForViews => false;
 
     public virtual SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.DoublePipe;
@@ -211,6 +213,8 @@ public static class SqlDialects
 
     private sealed class SqliteDialect() : SqlDialect("sqlite")
     {
+        public override bool SupportsParenthesizedSetOperands => false;
+
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote
@@ -583,6 +587,7 @@ public sealed class SqlDialectBuilder
         public override bool SupportsILike => baseDialect.SupportsILike;
         public override bool SupportsReturning => baseDialect.SupportsReturning;
         public override bool SupportsReturningInto => baseDialect.SupportsReturningInto;
+        public override bool SupportsParenthesizedSetOperands => baseDialect.SupportsParenthesizedSetOperands;
         public override bool RequiresOrderByForOffset => baseDialect.RequiresOrderByForOffset;
         public override bool SupportsTableAliasAs => baseDialect.SupportsTableAliasAs;
         public override bool UsesSqlSecurityForViews => baseDialect.UsesSqlSecurityForViews;

@@ -156,6 +156,8 @@ public static class SqlParser
         var VIRTUAL = Keyword("VIRTUAL");
         var STORED = Keyword("STORED");
         var ADD = Keyword("ADD");
+        var RESTART = Keyword("RESTART");
+        var SCHEMA = Keyword("SCHEMA");
         var CYCLE = Keyword("CYCLE");
         var CACHE = Keyword("CACHE");
         var MINVALUE = Keyword("MINVALUE");
@@ -275,10 +277,17 @@ public static class SqlParser
             leftParenthesis,
             WHERE.SkipAnd(expression),
             rightParenthesis));
+        var namedWindowReference = simpleIdentifier.Then(value => new ParsedWindow(
+            null,
+            null,
+            null,
+            value));
+        var over = OVER.SkipAnd(
+            namedWindowReference.Or(Between(leftParenthesis, windowSpecification, rightParenthesis)));
         var function = functionCore
             .And(withinGroup.Optional())
             .And(functionFilter.Optional())
-            .And(OVER.SkipAnd(Between(leftParenthesis, windowSpecification, rightParenthesis)).Optional())
+            .And(over.Optional())
             .Then<SqlExpression>(value =>
             {
                 var call = value.Item1 with
@@ -381,13 +390,14 @@ public static class SqlParser
             .AndSkip(THEN)
             .And(expression)
             .Then(value => new WhenClause(value.Item1, value.Item2));
-        var caseExpression = CASE.SkipAnd(OneOrMany(whenClause))
+        var caseExpression = CASE.SkipAnd(expression.Optional())
+            .And(OneOrMany(whenClause))
             .And(ELSE.SkipAnd(expression).Optional())
             .AndSkip(END)
             .Then<SqlExpression>(value => new CaseExpression(
-                null,
-                value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : null));
+                value.Item1.HasValue ? value.Item1.Value : null,
+                value.Item2,
+                value.Item3.HasValue ? value.Item3.Value : null));
 
         var exists = NOT.Optional()
             .AndSkip(EXISTS)
@@ -497,7 +507,7 @@ public static class SqlParser
         var inQuery = query.Then(value => new InTarget(Array.Empty<SqlExpression>(), value));
         var inSuffix = NOT.Optional()
             .AndSkip(IN)
-            .And(Between(leftParenthesis, inQuery.Or(inValues), rightParenthesis))
+            .And(Between(leftParenthesis, inValues.Or(inQuery), rightParenthesis))
             .Then<Func<SqlExpression, SqlExpression>>(value => target => new InExpression(
                 target,
                 value.Item2.Values,
@@ -604,7 +614,18 @@ public static class SqlParser
                 .Then(value => (Start: value.Item1, End: (WindowFrameBound?)value.Item2))
                 .Or(windowFrameBound.Then(value => (Start: value, End: (WindowFrameBound?)null))))
             .Then(value => new WindowFrame(value.Item1, value.Item2.Start, value.Item2.End));
-        windowSpecification.Parser = windowPartitionBy.Optional()
+        var baseWindowIdentifier = simpleIdentifier.When(
+            (_, identifier) => !identifier.Value.Equals("PARTITION", StringComparison.OrdinalIgnoreCase));
+        var namedWindowSpecification = baseWindowIdentifier
+            .And(windowPartitionBy.Optional())
+            .And(windowOrderBy.Optional())
+            .And(windowFrame.Optional())
+            .Then(value => new ParsedWindow(
+                value.Item2.HasValue ? value.Item2.Value : null,
+                value.Item3.HasValue ? value.Item3.Value : null,
+                value.Item4.HasValue ? value.Item4.Value : null,
+                value.Item1));
+        var anonymousWindowSpecification = windowPartitionBy.Optional()
             .And(windowOrderBy.Optional())
             .And(windowFrame.Optional())
             .Then(value => new ParsedWindow(
@@ -612,6 +633,7 @@ public static class SqlParser
                 value.Item2.HasValue ? value.Item2.Value : null,
                 value.Item3.HasValue ? value.Item3.Value : null,
                 null));
+        windowSpecification.Parser = namedWindowSpecification.Or(anonymousWindowSpecification);
 
         var alias = AS.SkipAnd(simpleIdentifier).Or(nonKeywordIdentifier);
         var tableAlias = syntax.SupportsTableAliasAs
@@ -804,7 +826,10 @@ public static class SqlParser
         var valueRow = Between(leftParenthesis, Separated(comma, expression), rightParenthesis);
         var valuesCore = VALUES.SkipAnd(Separated(comma, valueRow))
             .Then<SqlQuery>(rows => new ValuesStatement(rows));
-        var queryPrimary = selectCore.Then<SqlQuery>(value => value).Or(valuesCore);
+        var parenthesizedQuery = Between(leftParenthesis, query, rightParenthesis);
+        var queryPrimary = parenthesizedQuery
+            .Or(selectCore.Then<SqlQuery>(value => value))
+            .Or(valuesCore);
         var setTail = setOperator.And(ALL.Optional()).And(queryPrimary)
             .Then(value => new SetTail(value.Item1, value.Item3, value.Item2.HasValue));
 
@@ -1054,17 +1079,26 @@ public static class SqlParser
             .Then<TableConstraint>(value => new UniqueConstraint(
                 value.Item2,
                 value.Item1.HasValue ? value.Item1.Value : null));
+        var referentialAction = CASCADE.Then(ReferentialAction.Cascade)
+            .Or(RESTRICT.Then(ReferentialAction.Restrict))
+            .Or(SET.SkipAnd(NULL).Then(ReferentialAction.SetNull))
+            .Or(SET.SkipAnd(DEFAULT).Then(ReferentialAction.SetDefault))
+            .Or(NO.SkipAnd(ACTION).Then(ReferentialAction.NoAction));
+        var onDeleteAction = ON.SkipAnd(DELETE).SkipAnd(referentialAction);
+        var onUpdateAction = ON.SkipAnd(UPDATE).SkipAnd(referentialAction);
         var foreignKeyConstraint = constraintName
             .And(FOREIGN.SkipAnd(KEY).SkipAnd(identifierList))
             .AndSkip(REFERENCES)
             .And(tableName)
             .And(identifierList)
+            .And(onDeleteAction.Optional())
+            .And(onUpdateAction.Optional())
             .Then<TableConstraint>(value => new ForeignKeyConstraint(
                 value.Item2,
                 value.Item3,
                 value.Item4,
-                ReferentialAction.Unspecified,
-                ReferentialAction.Unspecified,
+                value.Item5.HasValue ? value.Item5.Value : ReferentialAction.Unspecified,
+                value.Item6.HasValue ? value.Item6.Value : ReferentialAction.Unspecified,
                 value.Item1.HasValue ? value.Item1.Value : null));
         var checkConstraint = constraintName
             .And(CHECK.SkipAnd(Between(leftParenthesis, expression, rightParenthesis)))
@@ -1173,6 +1207,7 @@ public static class SqlParser
         var schemaObjectKind = TABLE.Then(SchemaObjectKind.Table)
             .Or(VIEW.Then(SchemaObjectKind.View))
             .Or(INDEX.Then(SchemaObjectKind.Index))
+            .Or(SCHEMA.Then(SchemaObjectKind.Schema))
             .Or(SEQUENCE.Then(SchemaObjectKind.Sequence));
         var dropStatement = DROP.SkipAnd(schemaObjectKind)
             .And(IF.SkipAnd(EXISTS).Optional())
@@ -1185,10 +1220,12 @@ public static class SqlParser
                 value.Item4.HasValue));
         var truncateStatement = TRUNCATE.SkipAnd(TABLE.Optional())
             .SkipAnd(Separated(comma, tableName))
+            .And(RESTART.SkipAnd(IDENTITY).Optional())
             .And(CASCADE.Optional())
             .Then<SqlStatement>(value => new TruncateStatement(
                 value.Item1,
-                Cascade: value.Item2.HasValue));
+                RestartIdentity: value.Item2.HasValue,
+                Cascade: value.Item3.HasValue));
 
         var addColumn = ADD.SkipAnd(COLUMN.Optional()).SkipAnd(columnDefinition)
             .Then<AlterTableAction>(value => new AddColumnAction(value));
