@@ -1,0 +1,48 @@
+<svg width="1200" height="360" viewBox="0 0 1200 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cyqwel">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="0.55" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wingLeft" x1="54" y1="0" x2="148" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="wingRight" x1="364" y1="0" x2="458" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FDE68A"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#1E1B4B" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="360" rx="40" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="40" fill="url(#gloss)"/>
+
+  <g transform="translate(70 36) scale(0.56)" filter="url(#soft)" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke-width="20">
+    <path d="M148 228 C122 200 96 182 66 176 C70 206 84 226 106 240 C88 232 70 232 54 238 C72 258 98 270 140 268"
+          stroke="url(#wingLeft)"/>
+    <path d="M106 240 C84 216 72 196 66 176" stroke="url(#wingLeft)"/>
+    <path d="M364 228 C390 200 416 182 446 176 C442 206 428 226 406 240 C424 232 442 232 458 238 C440 258 414 270 372 268"
+          stroke="url(#wingRight)"/>
+    <path d="M406 240 C428 216 440 196 446 176" stroke="url(#wingRight)"/>
+  </g>
+
+  <g transform="translate(70 36) scale(0.56)" filter="url(#soft)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M152 158 C152 122 198 106 256 106 C314 106 360 122 360 158 C360 194 314 210 256 210 C198 210 152 194 152 158Z"
+          stroke="#FFFFFF" stroke-width="30"/>
+    <path d="M152 158 V346 C152 382 198 406 256 406 C314 406 360 382 360 346 V158"
+          stroke="#FFFFFF" stroke-width="30"/>
+    <path d="M152 252 C152 288 198 308 256 308 C314 308 360 288 360 252"
+          stroke="#FFFFFF" stroke-width="26"/>
+  </g>
+
+  <text x="400" y="186" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="104" font-weight="700" fill="#FFFFFF" letter-spacing="-1">Cy<tspan fill="#C7D2FE">qwel</tspan></text>
+  <text x="404" y="244" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="33" font-weight="400" fill="#E0E7FF" letter-spacing="0.5">Parse, transform, and generate SQL for .NET</text>
+</svg>
