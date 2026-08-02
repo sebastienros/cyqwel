@@ -106,6 +106,148 @@ public class ParserTests
     }
 
     [Fact]
+    public void Parses_window_functions_and_parameter_defaults()
+    {
+        var dialect = CreateParameterDefaultDialect();
+        var document = dialect.Parse("""
+            SELECT COUNT(1) OVER (),
+                   SUM(amount) OVER (PARTITION BY account_id),
+                   ROW_NUMBER() OVER (PARTITION BY region ORDER BY created_at DESC, id)
+            FROM entries
+            WHERE account_id = @accountId:10
+            """);
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+        var windows = select.Projections
+            .Select(item => Assert.IsType<WindowExpression>(item.Expression))
+            .ToArray();
+        var parameter = Assert.Single(document.FindAll<ParameterExpression>());
+        var orderedWindow = Assert.IsAssignableFrom<IReadOnlyList<OrderByItem>>(windows[2].OrderBy);
+
+        Assert.Null(windows[0].PartitionBy);
+        Assert.Null(windows[0].OrderBy);
+        Assert.Single(windows[1].PartitionBy!);
+        Assert.Null(windows[1].OrderBy);
+        Assert.Single(windows[2].PartitionBy!);
+        Assert.Equal(2, orderedWindow.Count);
+        Assert.Equal(OrderDirection.Descending, orderedWindow[0].Direction);
+        Assert.Equal(OrderDirection.Unspecified, orderedWindow[1].Direction);
+        Assert.Equal(10L, Assert.IsType<LiteralExpression>(parameter.DefaultValue).Value);
+    }
+
+    [Fact]
+    public void Preserves_unspecified_order_direction()
+    {
+        var document = SqlParser.Parse("SELECT a ORDER BY b");
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+
+        Assert.Equal(OrderDirection.Unspecified, Assert.Single(select.OrderBy!).Direction);
+        Assert.Equal("SELECT a ORDER BY b", document.ToSql(SqlDialects.TSql));
+    }
+
+    [Fact]
+    public void Preserves_grouping_decimal_scale_and_comma_tables()
+    {
+        var document = SqlParser.Parse(
+            "select 1.0 from t1, t2 where (a = b) or (c = d)");
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+        var join = Assert.IsType<JoinTable>(select.From);
+        var literal = Assert.IsType<LiteralExpression>(Assert.Single(select.Projections).Expression);
+
+        Assert.Equal(JoinSyntax.Comma, join.Syntax);
+        Assert.IsType<decimal>(literal.Value);
+        Assert.Equal(
+            "SELECT 1.0 FROM t1, t2 WHERE (a = b) OR (c = d)",
+            document.ToSql());
+    }
+
+    [Fact]
+    public void Parses_keyword_named_parameters_in_row_limits()
+    {
+        var withoutDefault = SqlParser.Parse(
+            "select a where a = @b limit @limit");
+        var withDefault = CreateParameterDefaultDialect().Parse(
+            "select a where a = @b limit @limit:10");
+        var parameter = withDefault.FindAll<ParameterExpression>()
+            .Single(value => value.Name == "limit");
+
+        Assert.Equal(
+            "SELECT a WHERE a = @b LIMIT @limit",
+            withoutDefault.ToSql());
+        Assert.Equal(10L, Assert.IsType<LiteralExpression>(parameter.DefaultValue).Value);
+        Assert.Equal(
+            "SELECT a WHERE a = @b LIMIT @limit",
+            withDefault.ToSql());
+    }
+
+    [Fact]
+    public void Parameter_defaults_are_opt_in()
+    {
+        Assert.Throws<SqlParseException>(() =>
+            SqlParser.Parse("select a where a = @b:10"));
+
+        var dialect = CreateParameterDefaultDialect();
+        var document = dialect.Parse("select a where a = @b:10");
+
+        Assert.Equal(
+            10L,
+            Assert.IsType<LiteralExpression>(
+                Assert.Single(document.FindAll<ParameterExpression>()).DefaultValue).Value);
+    }
+
+    [Fact]
+    public void Generates_flat_set_chains_and_compact_cte_columns()
+    {
+        var set = SqlParser.Parse(
+            "select a from b union all select c from d union select e from f");
+        var cte = SqlParser.Parse(
+            "with cte1(abc, def) as (select abc, def from source) select abc from cte1");
+
+        Assert.Equal(
+            "SELECT a FROM b UNION ALL SELECT c FROM d UNION SELECT e FROM f",
+            set.ToSql());
+        Assert.Equal(
+            "WITH cte1(abc, def) AS (SELECT abc, def FROM source) SELECT abc FROM cte1",
+            cte.ToSql());
+    }
+
+    [Fact]
+    public void Preserves_set_operator_precedence()
+    {
+        var unionThenIntersect = new SetOperationStatement(
+            new SetOperationStatement(
+                Sql.Select("a").From("first").Build(),
+                SetOperator.Union,
+                Sql.Select("a").From("t2").Build()),
+            SetOperator.Intersect,
+            Sql.Select("a").From("t3").Build());
+        var intersectThenUnion = new SetOperationStatement(
+            new SetOperationStatement(
+                Sql.Select("a").From("first").Build(),
+                SetOperator.Intersect,
+                Sql.Select("a").From("t2").Build()),
+            SetOperator.Union,
+            Sql.Select("a").From("t3").Build());
+
+        Assert.Equal(
+            "(SELECT a FROM \"first\" UNION SELECT a FROM t2) INTERSECT SELECT a FROM t3",
+            unionThenIntersect.ToSql());
+        Assert.Equal(
+            "SELECT a FROM \"first\" INTERSECT SELECT a FROM t2 UNION SELECT a FROM t3",
+            intersectThenUnion.ToSql());
+    }
+
+    [Fact]
+    public void Window_keywords_remain_valid_identifiers()
+    {
+        var document = SqlParser.Parse(
+            "SELECT over, partition, COUNT(*) OVER (PARTITION BY partition ORDER BY over) FROM data");
+
+        Assert.Equal(
+            "SELECT over, partition, COUNT(*) OVER (PARTITION BY partition ORDER BY over) FROM data",
+            document.ToSql());
+    }
+
+    [Fact]
     public void Requires_semicolons_between_statements()
     {
         Assert.Throws<SqlParseException>(() => SqlParser.Parse("SELECT 1 SELECT 2"));
@@ -312,4 +454,9 @@ public class ParserTests
 
         Assert.Equal("\0\b\n\r\t\u001aq", literal.Value);
     }
+
+    private static SqlDialect CreateParameterDefaultDialect() =>
+        SqlDialectBuilder.Create($"parameter-defaults-{Guid.NewGuid():N}")
+            .ConfigureParser(options => options with { SupportsParameterDefaults = true })
+            .Build();
 }

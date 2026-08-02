@@ -35,11 +35,18 @@ public enum JoinKind
     Cross,
 }
 
+public enum JoinSyntax
+{
+    Explicit,
+    Comma,
+}
+
 public sealed record JoinTable(
     TableSource Left,
     TableSource Right,
     JoinKind Kind,
-    SqlExpression? Condition = null) : TableSource;
+    SqlExpression? Condition = null,
+    JoinSyntax Syntax = JoinSyntax.Explicit) : TableSource;
 
 public sealed record SelectItem(SqlExpression Expression, SqlIdentifier? Alias = null) : SqlNode
 {
@@ -53,6 +60,7 @@ public enum OrderDirection
 {
     Ascending,
     Descending,
+    Unspecified,
 }
 
 public enum NullOrder
@@ -64,7 +72,7 @@ public enum NullOrder
 
 public sealed record OrderByItem(
     SqlExpression Expression,
-    OrderDirection Direction = OrderDirection.Ascending,
+    OrderDirection Direction = OrderDirection.Unspecified,
     NullOrder NullOrder = NullOrder.Unspecified) : SqlNode;
 
 public sealed record CommonTableExpression(

@@ -9,7 +9,9 @@ Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutabl
 - Strict dialect parsing with distinct quote, parameter, operator, clause, and DML rules
 - Read-only visitor, non-mutating rewriter, depth-first and breadth-first traversal
 - Dialect-aware generation and transpilation
+- Window functions with `OVER`, `PARTITION BY`, and window ordering
 - Public dialect base class, registry, and fluent custom dialect builder
+- Custom literal and argument-aware function rendering hooks
 - Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
 - Input and AST complexity guards
 - Pooled SQL generation buffers
@@ -29,6 +31,11 @@ var postgres = SqlDialects.PostgreSql.Generate(document);
 ```
 
 `SqlParser.TryParse` returns a structured `SqlParseError` when input is invalid. `SqlParseOptions` controls maximum input length and AST node count.
+
+Dialects can opt into application parameter defaults such as `@pageSize:10` with
+`SqlDialectParserOptions.SupportsParameterDefaults`. It is disabled by default. When
+enabled, `ParameterExpression.DefaultValue` exposes the literal default without emitting
+it as part of the generated database command.
 
 Dialect entry points enforce source compatibility:
 

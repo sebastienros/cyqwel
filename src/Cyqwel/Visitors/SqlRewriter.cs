@@ -24,12 +24,14 @@ public abstract class SqlRewriter
             StarExpression value => VisitStar(value),
             LiteralExpression value => VisitLiteral(value),
             ParameterExpression value => VisitParameter(value),
+            ParenthesizedExpression value => VisitParenthesized(value),
             UnaryExpression value => VisitUnary(value),
             BinaryExpression value => VisitBinary(value),
             BetweenExpression value => VisitBetween(value),
             InExpression value => VisitIn(value),
             IsNullExpression value => VisitIsNull(value),
             FunctionCallExpression value => VisitFunctionCall(value),
+            WindowExpression value => VisitWindow(value),
             ExistsExpression value => VisitExists(value),
             SubqueryExpression value => VisitSubquery(value),
             WhenClause value => VisitWhen(value),
@@ -163,7 +165,20 @@ public abstract class SqlRewriter
         UpdateOptional(node, VisitOptionalList(node.Qualifier), node.Qualifier, static (n, qualifier) => n with { Qualifier = qualifier });
 
     protected virtual SqlNode VisitLiteral(LiteralExpression node) => node;
-    protected virtual SqlNode VisitParameter(ParameterExpression node) => node;
+    protected virtual SqlNode VisitParameter(ParameterExpression node)
+    {
+        var defaultValue = VisitOptional(node.DefaultValue);
+        return ReferenceEquals(defaultValue, node.DefaultValue)
+            ? node
+            : node with { DefaultValue = defaultValue };
+    }
+
+    protected virtual SqlNode VisitParenthesized(ParenthesizedExpression node) =>
+        Update(
+            node,
+            Visit(node.Expression),
+            node.Expression,
+            static (n, expression) => n with { Expression = expression });
 
     protected virtual SqlNode VisitUnary(UnaryExpression node) =>
         Update(node, Visit(node.Operand), node.Operand, static (n, operand) => n with { Operand = operand });
@@ -211,6 +226,18 @@ public abstract class SqlRewriter
         return ReferenceEquals(name, node.Name) && ReferenceEquals(arguments, node.Arguments)
             ? node
             : node with { Name = name, Arguments = arguments };
+    }
+
+    protected virtual SqlNode VisitWindow(WindowExpression node)
+    {
+        var expression = Visit(node.Expression);
+        var partitionBy = VisitOptionalList(node.PartitionBy);
+        var orderBy = VisitOptionalList(node.OrderBy);
+        return ReferenceEquals(expression, node.Expression)
+            && ReferenceEquals(partitionBy, node.PartitionBy)
+            && ReferenceEquals(orderBy, node.OrderBy)
+                ? node
+                : node with { Expression = expression, PartitionBy = partitionBy, OrderBy = orderBy };
     }
 
     protected virtual SqlNode VisitExists(ExistsExpression node) =>

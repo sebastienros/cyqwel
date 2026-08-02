@@ -78,6 +78,15 @@ public class SqlDialect
 
     public virtual string GetFunctionName(string name) => name;
 
+    public virtual string? RenderLiteral(
+        LiteralExpression literal,
+        SqlGenerationOptions options) => null;
+
+    public virtual string? RenderFunction(
+        FunctionCallExpression function,
+        Func<SqlExpression, string> renderExpression,
+        SqlGenerationOptions options) => null;
+
     public virtual bool ShouldQuoteIdentifier(SqlIdentifier identifier) =>
         identifier.IsQuoted
         || identifier.Value.Length == 0
@@ -295,6 +304,8 @@ public sealed class SqlDialectBuilder
     private Func<SqlNode, SqlNode>? _preprocess;
     private Func<SqlNode, SqlNode>? _transform;
     private Func<string, string>? _functionName;
+    private Func<LiteralExpression, SqlGenerationOptions, string?>? _literalRenderer;
+    private Func<FunctionCallExpression, Func<SqlExpression, string>, SqlGenerationOptions, string?>? _functionRenderer;
     private Func<SqlDialectParserOptions, SqlDialectParserOptions>? _parserOptions;
 
     private SqlDialectBuilder(string name)
@@ -329,6 +340,20 @@ public sealed class SqlDialectBuilder
         return this;
     }
 
+    public SqlDialectBuilder WithLiteralRenderer(
+        Func<LiteralExpression, SqlGenerationOptions, string?> renderer)
+    {
+        _literalRenderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        return this;
+    }
+
+    public SqlDialectBuilder WithFunctionRenderer(
+        Func<FunctionCallExpression, Func<SqlExpression, string>, SqlGenerationOptions, string?> renderer)
+    {
+        _functionRenderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+        return this;
+    }
+
     public SqlDialectBuilder ConfigureParser(
         Func<SqlDialectParserOptions, SqlDialectParserOptions> configure)
     {
@@ -342,6 +367,8 @@ public sealed class SqlDialectBuilder
         _preprocess,
         _transform,
         _functionName,
+        _literalRenderer,
+        _functionRenderer,
         _parserOptions);
 
     public SqlDialect Register()
@@ -357,6 +384,8 @@ public sealed class SqlDialectBuilder
         Func<SqlNode, SqlNode>? preprocess,
         Func<SqlNode, SqlNode>? transform,
         Func<string, string>? functionName,
+        Func<LiteralExpression, SqlGenerationOptions, string?>? literalRenderer,
+        Func<FunctionCallExpression, Func<SqlExpression, string>, SqlGenerationOptions, string?>? functionRenderer,
         Func<SqlDialectParserOptions, SqlDialectParserOptions>? parserOptions)
         : SqlDialect(
             name,
@@ -385,6 +414,19 @@ public sealed class SqlDialectBuilder
             functionName is null
                 ? baseDialect.GetFunctionName(value)
                 : functionName(baseDialect.GetFunctionName(value));
+
+        public override string? RenderLiteral(
+            LiteralExpression literal,
+            SqlGenerationOptions options) =>
+            literalRenderer?.Invoke(literal, options)
+            ?? baseDialect.RenderLiteral(literal, options);
+
+        public override string? RenderFunction(
+            FunctionCallExpression function,
+            Func<SqlExpression, string> renderExpression,
+            SqlGenerationOptions options) =>
+            functionRenderer?.Invoke(function, renderExpression, options)
+            ?? baseDialect.RenderFunction(function, renderExpression, options);
 
         public override bool ShouldQuoteIdentifier(SqlIdentifier identifier) =>
             baseDialect.ShouldQuoteIdentifier(identifier);

@@ -58,6 +58,8 @@ public sealed record SqlDialectParserOptions
 
     public SqlParameterStyle ParameterStyles { get; init; } = SqlParameterStyle.QuestionMark;
 
+    public bool SupportsParameterDefaults { get; init; }
+
     public bool SupportsDoubleQuotedStrings { get; init; }
 
     public bool SupportsBackslashStringEscapes { get; init; }

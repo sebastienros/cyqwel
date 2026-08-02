@@ -28,7 +28,12 @@ public sealed record StarExpression(IReadOnlyList<SqlIdentifier>? Qualifier = nu
 
 public sealed record LiteralExpression(object? Value) : SqlExpression;
 
-public sealed record ParameterExpression(string Name, char Prefix = '@') : SqlExpression;
+public sealed record ParameterExpression(
+    string Name,
+    char Prefix = '@',
+    SqlExpression? DefaultValue = null) : SqlExpression;
+
+public sealed record ParenthesizedExpression(SqlExpression Expression) : SqlExpression;
 
 public enum UnaryOperator
 {
@@ -100,6 +105,11 @@ public sealed record FunctionCallExpression(
     {
     }
 }
+
+public sealed record WindowExpression(
+    SqlExpression Expression,
+    IReadOnlyList<SqlExpression>? PartitionBy = null,
+    IReadOnlyList<OrderByItem>? OrderBy = null) : SqlExpression;
 
 public sealed record ExistsExpression(SqlQuery Query, bool IsNegated = false) : SqlExpression;
 
