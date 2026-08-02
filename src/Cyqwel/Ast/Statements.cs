@@ -13,7 +13,20 @@ public sealed record SelectStatement(
     IReadOnlyList<CommonTableExpression>? CommonTableExpressions = null,
     SqlExpression? Top = null,
     bool IsTopPercent = false,
-    bool WithTies = false) : SqlQuery;
+    bool WithTies = false,
+    bool IsRecursive = false,
+    IReadOnlyList<WindowDefinition>? Windows = null,
+    SqlExpression? Qualify = null,
+    ConnectByClause? ConnectBy = null,
+    bool OrderSiblings = false) : SqlQuery;
+
+public sealed record ValuesStatement(
+    IReadOnlyList<IReadOnlyList<SqlExpression>> Rows,
+    IReadOnlyList<OrderByItem>? OrderBy = null,
+    SqlExpression? Limit = null,
+    SqlExpression? Offset = null,
+    bool IsRecursive = false,
+    IReadOnlyList<CommonTableExpression>? CommonTableExpressions = null) : SqlQuery;
 
 public enum SetOperator
 {
@@ -29,22 +42,37 @@ public sealed record SetOperationStatement(
     bool IsAll = false,
     IReadOnlyList<OrderByItem>? OrderBy = null,
     SqlExpression? Limit = null,
-    SqlExpression? Offset = null) : SqlQuery;
+    SqlExpression? Offset = null,
+    bool IsRecursive = false,
+    IReadOnlyList<CommonTableExpression>? CommonTableExpressions = null) : SqlQuery;
 
 public sealed record InsertStatement(
     TableName Target,
     IReadOnlyList<SqlIdentifier>? Columns,
     IReadOnlyList<IReadOnlyList<SqlExpression>>? Values = null,
     SqlQuery? Source = null,
-    IReadOnlyList<SqlExpression>? Returning = null) : SqlStatement;
+    IReadOnlyList<SqlExpression>? Returning = null,
+    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement;
 
 public sealed record UpdateStatement(
     NamedTable Target,
     IReadOnlyList<Assignment> Assignments,
     SqlExpression? Where = null,
-    IReadOnlyList<SqlExpression>? Returning = null) : SqlStatement;
+    IReadOnlyList<SqlExpression>? Returning = null,
+    IReadOnlyList<SqlExpression>? ReturningInto = null,
+    TableSource? From = null) : SqlStatement;
 
 public sealed record DeleteStatement(
     NamedTable Target,
     SqlExpression? Where = null,
-    IReadOnlyList<SqlExpression>? Returning = null) : SqlStatement;
+    IReadOnlyList<SqlExpression>? Returning = null,
+    IReadOnlyList<SqlExpression>? ReturningInto = null,
+    TableSource? Using = null) : SqlStatement;
+
+public sealed record MergeStatement(
+    NamedTable Target,
+    TableSource Source,
+    SqlExpression Condition,
+    IReadOnlyList<MergeWhenClause> WhenClauses,
+    IReadOnlyList<SqlExpression>? Returning = null,
+    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement;

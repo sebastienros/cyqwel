@@ -12,6 +12,7 @@ public enum SqlLimitStyle
     Top,
     OffsetFetch,
     LimitOffsetComma,
+    FetchFirst,
 }
 
 public enum SqlConcatenationStyle
@@ -34,7 +35,8 @@ public class SqlDialect
         "INTO", "IS", "JOIN", "LAST", "LEFT", "LIKE", "LIMIT", "NEXT", "NOT", "NULL",
         "NULLS", "OFFSET", "ON", "ONLY", "OR", "ORDER", "OUTER", "RETURNING", "RIGHT",
         "ROW", "ROWS", "SELECT", "SET", "THEN", "TOP", "TRUE", "UNION", "UPDATE", "VALUES",
-        "WHEN", "WHERE", "WITH",
+        "WHEN", "WHERE", "WITH", "MERGE", "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE",
+        "VIEW", "INDEX", "SEQUENCE", "CONNECT", "PRIOR", "START", "SIBLINGS",
     };
 
     public SqlDialect(
@@ -62,7 +64,11 @@ public class SqlDialect
 
     public virtual bool SupportsReturning => true;
 
+    public virtual bool SupportsReturningInto => ParserOptions.SupportsReturningInto;
+
     public virtual bool RequiresOrderByForOffset => false;
+
+    public virtual bool SupportsTableAliasAs => true;
 
     public virtual SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.DoublePipe;
 
@@ -78,6 +84,14 @@ public class SqlDialect
 
     public virtual string GetFunctionName(string name) => name;
 
+    public virtual string GetSetOperator(SetOperator value) => value switch
+    {
+        SetOperator.Union => "UNION",
+        SetOperator.Intersect => "INTERSECT",
+        SetOperator.Except => "EXCEPT",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
     public virtual string? RenderLiteral(
         LiteralExpression literal,
         SqlGenerationOptions options) => null;
@@ -86,6 +100,8 @@ public class SqlDialect
         FunctionCallExpression function,
         Func<SqlExpression, string> renderExpression,
         SqlGenerationOptions options) => null;
+
+    public virtual string? RenderParameter(ParameterExpression parameter) => null;
 
     public virtual bool ShouldQuoteIdentifier(SqlIdentifier identifier) =>
         identifier.IsQuoted
@@ -149,8 +165,10 @@ public static class SqlDialects
 
     public static SqlDialect MySql { get; } = new MySqlDialect();
 
+    public static SqlDialect Oracle { get; } = new OracleDialect();
+
     public static IReadOnlyList<SqlDialect> BuiltIn { get; } =
-        [Generic, TSql, Sqlite, PostgreSql, MySql];
+        [Generic, TSql, Sqlite, PostgreSql, MySql, Oracle];
 
     private sealed class GenericDialect() : SqlDialect("generic");
 
@@ -243,6 +261,83 @@ public static class SqlDialects
 
         public override string GetFunctionName(string name) =>
             name.Equals("COALESCE", StringComparison.OrdinalIgnoreCase) ? "COALESCE" : name;
+    }
+
+    private sealed class OracleDialect() : SqlDialect("oracle", limitStyle: SqlLimitStyle.FetchFirst)
+    {
+        public override bool SupportsTableAliasAs => false;
+        public override SqlDialectParserOptions ParserOptions { get; } = new()
+        {
+            IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
+            ParameterStyles = SqlParameterStyle.ColonNamed,
+            SupportsLimit = false,
+            SupportsOffsetOnly = false,
+            SupportsOffsetFetch = true,
+            SupportsReturning = true,
+            SupportsReturningInto = true,
+            SupportsILike = false,
+            SupportsNullOrdering = true,
+            SupportsMinus = true,
+            SupportsRecursiveCte = false,
+            SupportsHierarchicalQueries = true,
+            SupportsTableAliasAs = false,
+            DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
+        };
+
+        public override string TrueLiteral => "1";
+        public override string FalseLiteral => "0";
+
+        public override string GetFunctionName(string name) => name.ToUpperInvariant() switch
+        {
+            "IFNULL" => "NVL",
+            "SUBSTRING" => "SUBSTR",
+            "RANDOM" or "RAND" => "DBMS_RANDOM.VALUE",
+            _ => name,
+        };
+
+        public override string GetSetOperator(SetOperator value) =>
+            value == SetOperator.Except ? "MINUS" : base.GetSetOperator(value);
+
+        public override string? RenderFunction(
+            FunctionCallExpression function,
+            Func<SqlExpression, string> renderExpression,
+            SqlGenerationOptions options)
+        {
+            if (function.Name.Value.Equals("NOW", StringComparison.OrdinalIgnoreCase)
+                || function.Name.Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
+                    && function.Arguments.Count == 0)
+            {
+                return "SYSTIMESTAMP";
+            }
+
+            if (function.Name.Value.Equals("COALESCE", StringComparison.OrdinalIgnoreCase)
+                && function.Arguments.Count == 2)
+            {
+                return $"NVL({renderExpression(function.Arguments[0])}, {renderExpression(function.Arguments[1])})";
+            }
+
+            return null;
+        }
+
+        public override string? RenderParameter(ParameterExpression parameter) =>
+            parameter.Name.Length == 0 ? null : $":{parameter.Name}";
+
+        public override SqlNode TransformNode(SqlNode node) => node switch
+        {
+            TryCastExpression value => new CastExpression(value.Expression, value.DataType)
+            {
+                Span = value.Span,
+            },
+            BinaryExpression { Operator: BinaryOperator.ILike or BinaryOperator.NotILike } value =>
+                new BinaryExpression(
+                    new FunctionCallExpression("LOWER", value.Left),
+                    value.Operator == BinaryOperator.ILike ? BinaryOperator.Like : BinaryOperator.NotLike,
+                    new FunctionCallExpression("LOWER", value.Right))
+                {
+                    Span = value.Span,
+                },
+            _ => node,
+        };
     }
 }
 
@@ -395,7 +490,9 @@ public sealed class SqlDialectBuilder
     {
         public override bool SupportsILike => baseDialect.SupportsILike;
         public override bool SupportsReturning => baseDialect.SupportsReturning;
+        public override bool SupportsReturningInto => baseDialect.SupportsReturningInto;
         public override bool RequiresOrderByForOffset => baseDialect.RequiresOrderByForOffset;
+        public override bool SupportsTableAliasAs => baseDialect.SupportsTableAliasAs;
         public override SqlConcatenationStyle ConcatenationStyle => baseDialect.ConcatenationStyle;
         public override SqlDialectParserOptions ParserOptions { get; } =
             parserOptions is null
@@ -415,6 +512,9 @@ public sealed class SqlDialectBuilder
                 ? baseDialect.GetFunctionName(value)
                 : functionName(baseDialect.GetFunctionName(value));
 
+        public override string GetSetOperator(SetOperator value) =>
+            baseDialect.GetSetOperator(value);
+
         public override string? RenderLiteral(
             LiteralExpression literal,
             SqlGenerationOptions options) =>
@@ -427,6 +527,9 @@ public sealed class SqlDialectBuilder
             SqlGenerationOptions options) =>
             functionRenderer?.Invoke(function, renderExpression, options)
             ?? baseDialect.RenderFunction(function, renderExpression, options);
+
+        public override string? RenderParameter(ParameterExpression parameter) =>
+            baseDialect.RenderParameter(parameter);
 
         public override bool ShouldQuoteIdentifier(SqlIdentifier identifier) =>
             baseDialect.ShouldQuoteIdentifier(identifier);

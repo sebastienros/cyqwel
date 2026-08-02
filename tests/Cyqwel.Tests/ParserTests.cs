@@ -48,10 +48,9 @@ public class ParserTests
 
         var document = SqlParser.Parse(sql);
         var set = Assert.IsType<SetOperationStatement>(Assert.Single(document.Statements));
-        var left = Assert.IsType<SelectStatement>(set.Left);
 
         Assert.True(set.IsAll);
-        Assert.Single(left.CommonTableExpressions!);
+        Assert.Single(set.CommonTableExpressions!);
         Assert.Single(set.OrderBy!);
         Assert.Equal(5L, Assert.IsType<LiteralExpression>(set.Limit).Value);
     }

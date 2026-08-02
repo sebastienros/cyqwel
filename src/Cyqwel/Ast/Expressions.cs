@@ -41,6 +41,8 @@ public enum UnaryOperator
     Minus,
     Not,
     BitwiseNot,
+    Prior,
+    ConnectByRoot,
 }
 
 public sealed record UnaryExpression(UnaryOperator Operator, SqlExpression Operand) : SqlExpression;
@@ -95,10 +97,55 @@ public sealed record InExpression(
 
 public sealed record IsNullExpression(SqlExpression Expression, bool IsNegated = false) : SqlExpression;
 
+public enum BooleanTestKind
+{
+    True,
+    False,
+    Unknown,
+}
+
+public sealed record BooleanTestExpression(
+    SqlExpression Expression,
+    BooleanTestKind Kind,
+    bool IsNegated = false) : SqlExpression;
+
+public sealed record DistinctFromExpression(
+    SqlExpression Left,
+    SqlExpression Right,
+    bool IsNegated = false) : SqlExpression;
+
+public sealed record RowExpression(IReadOnlyList<SqlExpression> Values) : SqlExpression;
+
+public sealed record DefaultExpression : SqlExpression;
+
+public sealed record CollateExpression(
+    SqlExpression Expression,
+    SqlIdentifier Collation) : SqlExpression;
+
+public sealed record ExtractExpression(
+    SqlIdentifier Field,
+    SqlExpression Expression) : SqlExpression;
+
+public sealed record IntervalExpression(
+    SqlExpression Value,
+    SqlIdentifier Unit) : SqlExpression;
+
+public enum SequenceValueKind
+{
+    Next,
+    Current,
+}
+
+public sealed record SequenceValueExpression(
+    TableName Sequence,
+    SequenceValueKind Kind) : SqlExpression;
+
 public sealed record FunctionCallExpression(
     SqlIdentifier Name,
     IReadOnlyList<SqlExpression> Arguments,
-    bool IsDistinct = false) : SqlExpression
+    bool IsDistinct = false,
+    SqlExpression? Filter = null,
+    IReadOnlyList<OrderByItem>? WithinGroup = null) : SqlExpression
 {
     public FunctionCallExpression(string name, params SqlExpression[] arguments)
         : this(new SqlIdentifier(name), arguments)
@@ -109,7 +156,9 @@ public sealed record FunctionCallExpression(
 public sealed record WindowExpression(
     SqlExpression Expression,
     IReadOnlyList<SqlExpression>? PartitionBy = null,
-    IReadOnlyList<OrderByItem>? OrderBy = null) : SqlExpression;
+    IReadOnlyList<OrderByItem>? OrderBy = null,
+    WindowFrame? Frame = null,
+    SqlIdentifier? WindowName = null) : SqlExpression;
 
 public sealed record ExistsExpression(SqlQuery Query, bool IsNegated = false) : SqlExpression;
 
@@ -123,6 +172,8 @@ public sealed record CaseExpression(
     SqlExpression? Else = null) : SqlExpression;
 
 public sealed record CastExpression(SqlExpression Expression, SqlDataType DataType) : SqlExpression;
+
+public sealed record TryCastExpression(SqlExpression Expression, SqlDataType DataType) : SqlExpression;
 
 public sealed record SqlDataType(
     SqlIdentifier Name,

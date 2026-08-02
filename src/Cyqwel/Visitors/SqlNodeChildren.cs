@@ -2,7 +2,7 @@ using Cyqwel.Ast;
 
 namespace Cyqwel.Visitors;
 
-internal static class SqlNodeChildren
+internal static partial class SqlNodeChildren
 {
     public static IEnumerable<SqlNode> Get(SqlNode node)
     {
@@ -12,6 +12,8 @@ internal static class SqlNodeChildren
                 return value.Statements;
             case SelectStatement value:
                 return SelectChildren(value);
+            case ValuesStatement value:
+                return ValuesChildren(value);
             case SetOperationStatement value:
                 return SetOperationChildren(value);
             case InsertStatement value:
@@ -20,6 +22,24 @@ internal static class SqlNodeChildren
                 return UpdateChildren(value);
             case DeleteStatement value:
                 return DeleteChildren(value);
+            case MergeStatement value:
+                return MergeChildren(value);
+            case CreateTableStatement value:
+                return CreateTableChildren(value);
+            case AlterTableStatement value:
+                return [value.Name, .. value.Actions];
+            case DropStatement value:
+                return value.Names;
+            case TruncateStatement value:
+                return value.Tables;
+            case CreateViewStatement value:
+                return CreateViewChildren(value);
+            case CreateIndexStatement value:
+                return CreateIndexChildren(value);
+            case CreateSequenceStatement value:
+                return [value.Name, value.Options];
+            case AlterSequenceStatement value:
+                return [value.Name, value.Options];
             case ColumnExpression value:
                 return value.Parts;
             case StarExpression value:
@@ -36,6 +56,20 @@ internal static class SqlNodeChildren
                 return InChildren(value);
             case IsNullExpression value:
                 return [value.Expression];
+            case BooleanTestExpression value:
+                return [value.Expression];
+            case DistinctFromExpression value:
+                return [value.Left, value.Right];
+            case RowExpression value:
+                return value.Values;
+            case CollateExpression value:
+                return [value.Expression, value.Collation];
+            case ExtractExpression value:
+                return [value.Field, value.Expression];
+            case IntervalExpression value:
+                return [value.Value, value.Unit];
+            case SequenceValueExpression value:
+                return [value.Sequence];
             case FunctionCallExpression value:
                 return FunctionChildren(value);
             case WindowExpression value:
@@ -50,6 +84,8 @@ internal static class SqlNodeChildren
                 return CaseChildren(value);
             case CastExpression value:
                 return [value.Expression, value.DataType];
+            case TryCastExpression value:
+                return [value.Expression, value.DataType];
             case SqlDataType value:
                 return [value.Name];
             case TableName value:
@@ -59,9 +95,7 @@ internal static class SqlNodeChildren
             case DerivedTable value:
                 return [value.Query, value.Alias];
             case JoinTable value:
-                return value.Condition is null
-                    ? [value.Left, value.Right]
-                    : [value.Left, value.Right, value.Condition];
+                return JoinChildren(value);
             case SelectItem value:
                 return value.Alias is null ? [value.Expression] : [value.Expression, value.Alias];
             case OrderByItem value:
@@ -70,8 +104,58 @@ internal static class SqlNodeChildren
                 return CommonTableExpressionChildren(value);
             case Assignment value:
                 return [value.Column, value.Value];
+            case WindowDefinition value:
+                return WindowDefinitionChildren(value);
+            case WindowFrame value:
+                return value.End is null ? [value.Start] : [value.Start, value.End];
+            case WindowFrameBound value:
+                return value.Offset is null ? Array.Empty<SqlNode>() : [value.Offset];
+            case ConnectByClause value:
+                return value.StartWith is null
+                    ? [value.Condition]
+                    : [value.StartWith, value.Condition];
+            case MergeWhenClause value:
+                return value.Condition is null ? [value.Action] : [value.Condition, value.Action];
+            case MergeUpdateAction value:
+                return value.DeleteWhere is null
+                    ? value.Assignments
+                    : [.. value.Assignments, value.DeleteWhere];
+            case MergeInsertAction value:
+                return value.Columns is null
+                    ? value.Values
+                    : [.. value.Columns, .. value.Values];
+            case ColumnDefinition value:
+                return ColumnDefinitionChildren(value);
+            case PrimaryKeyConstraint value:
+                return ConstraintChildren(value.Name, value.Columns);
+            case UniqueConstraint value:
+                return ConstraintChildren(value.Name, value.Columns);
+            case ForeignKeyConstraint value:
+                return ForeignKeyChildren(value);
+            case CheckConstraint value:
+                return value.Name is null ? [value.Condition] : [value.Name, value.Condition];
+            case AddColumnAction value:
+                return [value.Column];
+            case DropColumnAction value:
+                return [value.Column];
+            case AlterColumnAction value:
+                return AlterColumnChildren(value);
+            case AddConstraintAction value:
+                return [value.Constraint];
+            case DropConstraintAction value:
+                return [value.Constraint];
+            case RenameColumnAction value:
+                return [value.Column, value.NewName];
+            case RenameTableAction value:
+                return [value.NewName];
+            case IndexColumn value:
+                return [value.Expression];
+            case SequenceOptions value:
+                return SequenceOptionChildren(value);
             case SqlIdentifier:
             case LiteralExpression:
+            case DefaultExpression:
+            case MergeDeleteAction:
                 return Array.Empty<SqlNode>();
             case ParameterExpression value:
                 return value.DefaultValue is null
@@ -101,6 +185,14 @@ internal static class SqlNodeChildren
 
         if (node.Having is not null) yield return node.Having;
 
+        if (node.Windows is not null)
+        {
+            foreach (var window in node.Windows) yield return window;
+        }
+
+        if (node.Qualify is not null) yield return node.Qualify;
+        if (node.ConnectBy is not null) yield return node.ConnectBy;
+
         if (node.OrderBy is not null)
         {
             foreach (var item in node.OrderBy) yield return item;
@@ -114,6 +206,11 @@ internal static class SqlNodeChildren
     {
         yield return node.Left;
         yield return node.Right;
+
+        if (node.CommonTableExpressions is not null)
+        {
+            foreach (var cte in node.CommonTableExpressions) yield return cte;
+        }
 
         if (node.OrderBy is not null)
         {
@@ -147,28 +244,45 @@ internal static class SqlNodeChildren
         {
             foreach (var expression in node.Returning) yield return expression;
         }
+
+        if (node.ReturningInto is not null)
+        {
+            foreach (var expression in node.ReturningInto) yield return expression;
+        }
     }
 
     private static IEnumerable<SqlNode> UpdateChildren(UpdateStatement node)
     {
         yield return node.Target;
         foreach (var assignment in node.Assignments) yield return assignment;
+        if (node.From is not null) yield return node.From;
         if (node.Where is not null) yield return node.Where;
 
         if (node.Returning is not null)
         {
             foreach (var expression in node.Returning) yield return expression;
         }
+
+        if (node.ReturningInto is not null)
+        {
+            foreach (var expression in node.ReturningInto) yield return expression;
+        }
     }
 
     private static IEnumerable<SqlNode> DeleteChildren(DeleteStatement node)
     {
         yield return node.Target;
+        if (node.Using is not null) yield return node.Using;
         if (node.Where is not null) yield return node.Where;
 
         if (node.Returning is not null)
         {
             foreach (var expression in node.Returning) yield return expression;
+        }
+
+        if (node.ReturningInto is not null)
+        {
+            foreach (var expression in node.ReturningInto) yield return expression;
         }
     }
 
@@ -183,6 +297,11 @@ internal static class SqlNodeChildren
     {
         yield return node.Name;
         foreach (var argument in node.Arguments) yield return argument;
+        if (node.Filter is not null) yield return node.Filter;
+        if (node.WithinGroup is not null)
+        {
+            foreach (var item in node.WithinGroup) yield return item;
+        }
     }
 
     private static IEnumerable<SqlNode> WindowChildren(WindowExpression node)
@@ -197,6 +316,9 @@ internal static class SqlNodeChildren
         {
             foreach (var item in node.OrderBy) yield return item;
         }
+
+        if (node.Frame is not null) yield return node.Frame;
+        if (node.WindowName is not null) yield return node.WindowName;
     }
 
     private static IEnumerable<SqlNode> CaseChildren(CaseExpression node)
@@ -216,5 +338,16 @@ internal static class SqlNodeChildren
         }
 
         yield return node.Query;
+    }
+
+    private static IEnumerable<SqlNode> JoinChildren(JoinTable node)
+    {
+        yield return node.Left;
+        yield return node.Right;
+        if (node.Condition is not null) yield return node.Condition;
+        if (node.Using is not null)
+        {
+            foreach (var column in node.Using) yield return column;
+        }
     }
 }

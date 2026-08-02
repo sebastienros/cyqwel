@@ -5,7 +5,7 @@ namespace Cyqwel.Visitors;
 /// <summary>
 /// Rewrites SQL trees bottom-up while preserving unchanged node instances.
 /// </summary>
-public abstract class SqlRewriter
+public abstract partial class SqlRewriter
 {
     public virtual SqlNode Visit(SqlNode node)
     {
@@ -15,10 +15,20 @@ public abstract class SqlRewriter
         {
             SqlDocument value => VisitDocument(value),
             SelectStatement value => VisitSelect(value),
+            ValuesStatement value => VisitValues(value),
             SetOperationStatement value => VisitSetOperation(value),
             InsertStatement value => VisitInsert(value),
             UpdateStatement value => VisitUpdate(value),
             DeleteStatement value => VisitDelete(value),
+            MergeStatement value => VisitMerge(value),
+            CreateTableStatement value => VisitCreateTable(value),
+            AlterTableStatement value => VisitAlterTable(value),
+            DropStatement value => VisitDrop(value),
+            TruncateStatement value => VisitTruncate(value),
+            CreateViewStatement value => VisitCreateView(value),
+            CreateIndexStatement value => VisitCreateIndex(value),
+            CreateSequenceStatement value => VisitCreateSequence(value),
+            AlterSequenceStatement value => VisitAlterSequence(value),
             SqlIdentifier value => VisitIdentifier(value),
             ColumnExpression value => VisitColumn(value),
             StarExpression value => VisitStar(value),
@@ -30,6 +40,14 @@ public abstract class SqlRewriter
             BetweenExpression value => VisitBetween(value),
             InExpression value => VisitIn(value),
             IsNullExpression value => VisitIsNull(value),
+            BooleanTestExpression value => VisitBooleanTest(value),
+            DistinctFromExpression value => VisitDistinctFrom(value),
+            RowExpression value => VisitRow(value),
+            DefaultExpression value => VisitDefault(value),
+            CollateExpression value => VisitCollate(value),
+            ExtractExpression value => VisitExtract(value),
+            IntervalExpression value => VisitInterval(value),
+            SequenceValueExpression value => VisitSequenceValue(value),
             FunctionCallExpression value => VisitFunctionCall(value),
             WindowExpression value => VisitWindow(value),
             ExistsExpression value => VisitExists(value),
@@ -37,6 +55,7 @@ public abstract class SqlRewriter
             WhenClause value => VisitWhen(value),
             CaseExpression value => VisitCase(value),
             CastExpression value => VisitCast(value),
+            TryCastExpression value => VisitTryCast(value),
             SqlDataType value => VisitDataType(value),
             TableName value => VisitTableName(value),
             NamedTable value => VisitNamedTable(value),
@@ -46,6 +65,28 @@ public abstract class SqlRewriter
             OrderByItem value => VisitOrderByItem(value),
             CommonTableExpression value => VisitCommonTableExpression(value),
             Assignment value => VisitAssignment(value),
+            WindowDefinition value => VisitWindowDefinition(value),
+            WindowFrame value => VisitWindowFrame(value),
+            WindowFrameBound value => VisitWindowFrameBound(value),
+            ConnectByClause value => VisitConnectBy(value),
+            MergeWhenClause value => VisitMergeWhen(value),
+            MergeUpdateAction value => VisitMergeUpdate(value),
+            MergeInsertAction value => VisitMergeInsert(value),
+            MergeDeleteAction value => VisitMergeDelete(value),
+            ColumnDefinition value => VisitColumnDefinition(value),
+            PrimaryKeyConstraint value => VisitPrimaryKeyConstraint(value),
+            UniqueConstraint value => VisitUniqueConstraint(value),
+            ForeignKeyConstraint value => VisitForeignKeyConstraint(value),
+            CheckConstraint value => VisitCheckConstraint(value),
+            AddColumnAction value => VisitAddColumn(value),
+            DropColumnAction value => VisitDropColumn(value),
+            AlterColumnAction value => VisitAlterColumn(value),
+            AddConstraintAction value => VisitAddConstraint(value),
+            DropConstraintAction value => VisitDropConstraint(value),
+            RenameColumnAction value => VisitRenameColumn(value),
+            RenameTableAction value => VisitRenameTable(value),
+            IndexColumn value => VisitIndexColumn(value),
+            SequenceOptions value => VisitSequenceOptions(value),
             _ => throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'."),
         };
     }
@@ -67,6 +108,9 @@ public abstract class SqlRewriter
         var offset = VisitOptional(node.Offset);
         var ctes = VisitOptionalList(node.CommonTableExpressions);
         var top = VisitOptional(node.Top);
+        var windows = VisitOptionalList(node.Windows);
+        var qualify = VisitOptional(node.Qualify);
+        var connectBy = VisitOptional(node.ConnectBy);
 
         return ReferenceEquals(projections, node.Projections)
             && ReferenceEquals(from, node.From)
@@ -78,6 +122,9 @@ public abstract class SqlRewriter
             && ReferenceEquals(offset, node.Offset)
             && ReferenceEquals(ctes, node.CommonTableExpressions)
             && ReferenceEquals(top, node.Top)
+            && ReferenceEquals(windows, node.Windows)
+            && ReferenceEquals(qualify, node.Qualify)
+            && ReferenceEquals(connectBy, node.ConnectBy)
                 ? node
                 : node with
                 {
@@ -91,6 +138,9 @@ public abstract class SqlRewriter
                     Offset = offset,
                     CommonTableExpressions = ctes,
                     Top = top,
+                    Windows = windows,
+                    Qualify = qualify,
+                    ConnectBy = connectBy,
                 };
     }
 
@@ -101,14 +151,24 @@ public abstract class SqlRewriter
         var orderBy = VisitOptionalList(node.OrderBy);
         var limit = VisitOptional(node.Limit);
         var offset = VisitOptional(node.Offset);
+        var ctes = VisitOptionalList(node.CommonTableExpressions);
 
         return ReferenceEquals(left, node.Left)
             && ReferenceEquals(right, node.Right)
             && ReferenceEquals(orderBy, node.OrderBy)
             && ReferenceEquals(limit, node.Limit)
             && ReferenceEquals(offset, node.Offset)
+            && ReferenceEquals(ctes, node.CommonTableExpressions)
                 ? node
-                : node with { Left = left, Right = right, OrderBy = orderBy, Limit = limit, Offset = offset };
+                : node with
+                {
+                    Left = left,
+                    Right = right,
+                    OrderBy = orderBy,
+                    Limit = limit,
+                    Offset = offset,
+                    CommonTableExpressions = ctes,
+                };
     }
 
     protected virtual SqlNode VisitInsert(InsertStatement node)
@@ -118,14 +178,24 @@ public abstract class SqlRewriter
         var values = VisitRows(node.Values);
         var source = VisitOptional(node.Source);
         var returning = VisitOptionalList(node.Returning);
+        var returningInto = VisitOptionalList(node.ReturningInto);
 
         return ReferenceEquals(target, node.Target)
             && ReferenceEquals(columns, node.Columns)
             && ReferenceEquals(values, node.Values)
             && ReferenceEquals(source, node.Source)
             && ReferenceEquals(returning, node.Returning)
+            && ReferenceEquals(returningInto, node.ReturningInto)
                 ? node
-                : node with { Target = target, Columns = columns, Values = values, Source = source, Returning = returning };
+                : node with
+                {
+                    Target = target,
+                    Columns = columns,
+                    Values = values,
+                    Source = source,
+                    Returning = returning,
+                    ReturningInto = returningInto,
+                };
     }
 
     protected virtual SqlNode VisitUpdate(UpdateStatement node)
@@ -134,13 +204,25 @@ public abstract class SqlRewriter
         var assignments = VisitList(node.Assignments);
         var where = VisitOptional(node.Where);
         var returning = VisitOptionalList(node.Returning);
+        var returningInto = VisitOptionalList(node.ReturningInto);
+        var from = VisitOptional(node.From);
 
         return ReferenceEquals(target, node.Target)
             && ReferenceEquals(assignments, node.Assignments)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
+            && ReferenceEquals(returningInto, node.ReturningInto)
+            && ReferenceEquals(from, node.From)
                 ? node
-                : node with { Target = target, Assignments = assignments, Where = where, Returning = returning };
+                : node with
+                {
+                    Target = target,
+                    Assignments = assignments,
+                    Where = where,
+                    Returning = returning,
+                    ReturningInto = returningInto,
+                    From = from,
+                };
     }
 
     protected virtual SqlNode VisitDelete(DeleteStatement node)
@@ -148,12 +230,23 @@ public abstract class SqlRewriter
         var target = Visit(node.Target);
         var where = VisitOptional(node.Where);
         var returning = VisitOptionalList(node.Returning);
+        var returningInto = VisitOptionalList(node.ReturningInto);
+        var usingSource = VisitOptional(node.Using);
 
         return ReferenceEquals(target, node.Target)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
+            && ReferenceEquals(returningInto, node.ReturningInto)
+            && ReferenceEquals(usingSource, node.Using)
                 ? node
-                : node with { Target = target, Where = where, Returning = returning };
+                : node with
+                {
+                    Target = target,
+                    Where = where,
+                    Returning = returning,
+                    ReturningInto = returningInto,
+                    Using = usingSource,
+                };
     }
 
     protected virtual SqlNode VisitIdentifier(SqlIdentifier node) => node;
@@ -223,9 +316,20 @@ public abstract class SqlRewriter
     {
         var name = Visit(node.Name);
         var arguments = VisitList(node.Arguments);
-        return ReferenceEquals(name, node.Name) && ReferenceEquals(arguments, node.Arguments)
+        var filter = VisitOptional(node.Filter);
+        var withinGroup = VisitOptionalList(node.WithinGroup);
+        return ReferenceEquals(name, node.Name)
+            && ReferenceEquals(arguments, node.Arguments)
+            && ReferenceEquals(filter, node.Filter)
+            && ReferenceEquals(withinGroup, node.WithinGroup)
             ? node
-            : node with { Name = name, Arguments = arguments };
+            : node with
+            {
+                Name = name,
+                Arguments = arguments,
+                Filter = filter,
+                WithinGroup = withinGroup,
+            };
     }
 
     protected virtual SqlNode VisitWindow(WindowExpression node)
@@ -233,11 +337,22 @@ public abstract class SqlRewriter
         var expression = Visit(node.Expression);
         var partitionBy = VisitOptionalList(node.PartitionBy);
         var orderBy = VisitOptionalList(node.OrderBy);
+        var frame = VisitOptional(node.Frame);
+        var windowName = VisitOptional(node.WindowName);
         return ReferenceEquals(expression, node.Expression)
             && ReferenceEquals(partitionBy, node.PartitionBy)
             && ReferenceEquals(orderBy, node.OrderBy)
+            && ReferenceEquals(frame, node.Frame)
+            && ReferenceEquals(windowName, node.WindowName)
                 ? node
-                : node with { Expression = expression, PartitionBy = partitionBy, OrderBy = orderBy };
+                : node with
+                {
+                    Expression = expression,
+                    PartitionBy = partitionBy,
+                    OrderBy = orderBy,
+                    Frame = frame,
+                    WindowName = windowName,
+                };
     }
 
     protected virtual SqlNode VisitExists(ExistsExpression node) =>
@@ -305,11 +420,13 @@ public abstract class SqlRewriter
         var left = Visit(node.Left);
         var right = Visit(node.Right);
         var condition = VisitOptional(node.Condition);
+        var usingColumns = VisitOptionalList(node.Using);
         return ReferenceEquals(left, node.Left)
             && ReferenceEquals(right, node.Right)
             && ReferenceEquals(condition, node.Condition)
+            && ReferenceEquals(usingColumns, node.Using)
                 ? node
-                : node with { Left = left, Right = right, Condition = condition };
+                : node with { Left = left, Right = right, Condition = condition, Using = usingColumns };
     }
 
     protected virtual SqlNode VisitSelectItem(SelectItem node)
