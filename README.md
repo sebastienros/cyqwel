@@ -205,3 +205,7 @@ Custom dialects can configure parsing, transform syntax nodes, and customize lit
 ## Supported dialects
 
 Cyqwel includes Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, and Oracle dialects. The shared syntax tree covers common relational queries, data modification, and schema statements while dialects handle source compatibility and target-specific SQL generation.
+
+## Inspiration
+
+Cyqwel was inspired by [SQLGlot](https://github.com/tobymao/sqlglot).
