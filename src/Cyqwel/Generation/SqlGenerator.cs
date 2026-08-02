@@ -149,7 +149,7 @@ public sealed class SqlGenerator
 
     private void WriteSetOperation(SetOperationStatement set)
     {
-        WriteQueryOperand(set.Left);
+        WriteQueryOperand(set.Left, set.Operator);
         ClauseBreak();
         Keyword(set.Operator switch
         {
@@ -171,9 +171,12 @@ public sealed class SqlGenerator
         WriteLimitOffset(set.Limit, set.Offset, set.OrderBy);
     }
 
-    private void WriteQueryOperand(SqlQuery query)
+    private void WriteQueryOperand(SqlQuery query, SetOperator? parentOperator = null)
     {
-        if (query is SetOperationStatement)
+        var parenthesize = query is SetOperationStatement child
+            && (parentOperator is null
+                || GetSetOperatorPrecedence(child.Operator) < GetSetOperatorPrecedence(parentOperator.Value));
+        if (parenthesize)
         {
             _builder.Append('(');
             WriteNode(query);
@@ -184,6 +187,9 @@ public sealed class SqlGenerator
             WriteNode(query);
         }
     }
+
+    private static int GetSetOperatorPrecedence(SetOperator value) =>
+        value == SetOperator.Intersect ? 2 : 1;
 
     private void WriteInsert(InsertStatement insert)
     {
@@ -277,7 +283,7 @@ public sealed class SqlGenerator
             WriteIdentifier(expression.Name);
             if (expression.Columns is { Count: > 0 })
             {
-                _builder.Append(" (");
+                _builder.Append('(');
                 WriteSeparated(expression.Columns, WriteIdentifier);
                 _builder.Append(')');
             }
@@ -298,11 +304,19 @@ public sealed class SqlGenerator
         ClauseBreak();
         Keyword("ORDER BY");
         Space();
+        WriteOrderByItems(orderBy);
+    }
+
+    private void WriteOrderByItems(IReadOnlyList<OrderByItem> orderBy)
+    {
         WriteSeparated(orderBy, item =>
         {
             WriteExpression(item.Expression);
-            Space();
-            Keyword(item.Direction == OrderDirection.Descending ? "DESC" : "ASC");
+            if (item.Direction != OrderDirection.Unspecified)
+            {
+                Space();
+                Keyword(item.Direction == OrderDirection.Descending ? "DESC" : "ASC");
+            }
 
             if (item.NullOrder != NullOrder.Unspecified)
             {
@@ -425,6 +439,13 @@ public sealed class SqlGenerator
                 break;
             case JoinTable join:
                 WriteTableSource(join.Left);
+                if (join.Syntax == JoinSyntax.Comma)
+                {
+                    _builder.Append(", ");
+                    WriteTableSource(join.Right);
+                    break;
+                }
+
                 SpaceOrNewLine();
                 Keyword(join.Kind switch
                 {
@@ -484,10 +505,15 @@ public sealed class SqlGenerator
                 _builder.Append('*');
                 break;
             case LiteralExpression literal:
-                WriteLiteral(literal.Value);
+                WriteLiteral(literal);
                 break;
             case ParameterExpression parameter:
                 WriteParameter(parameter);
+                break;
+            case ParenthesizedExpression parenthesized:
+                _builder.Append('(');
+                WriteExpression(parenthesized.Expression);
+                _builder.Append(')');
                 break;
             case UnaryExpression unary:
                 WriteUnary(unary);
@@ -524,6 +550,9 @@ public sealed class SqlGenerator
                 break;
             case FunctionCallExpression function:
                 WriteFunction(function);
+                break;
+            case WindowExpression window:
+                WriteWindow(window);
                 break;
             case ExistsExpression exists:
                 if (exists.IsNegated) Keyword("NOT ");
@@ -631,6 +660,16 @@ public sealed class SqlGenerator
 
     private void WriteFunction(FunctionCallExpression function)
     {
+        var rendered = _dialect.RenderFunction(
+            function,
+            expression => new SqlGenerator(_dialect, _options).Generate(expression),
+            _options);
+        if (rendered is not null)
+        {
+            _builder.Append(rendered);
+            return;
+        }
+
         var name = _dialect.GetFunctionName(function.Name.Value);
         name = _options.FunctionNameCase switch
         {
@@ -646,6 +685,32 @@ public sealed class SqlGenerator
         }
 
         WriteSeparated(function.Arguments, expression => WriteExpression(expression));
+        _builder.Append(')');
+    }
+
+    private void WriteWindow(WindowExpression window)
+    {
+        WriteExpression(window.Expression);
+        Space();
+        Keyword("OVER");
+        _builder.Append(" (");
+        var hasClause = false;
+        if (window.PartitionBy is { Count: > 0 })
+        {
+            Keyword("PARTITION BY");
+            Space();
+            WriteSeparated(window.PartitionBy, expression => WriteExpression(expression));
+            hasClause = true;
+        }
+
+        if (window.OrderBy is { Count: > 0 })
+        {
+            if (hasClause) Space();
+            Keyword("ORDER BY");
+            Space();
+            WriteOrderByItems(window.OrderBy);
+        }
+
         _builder.Append(')');
     }
 
@@ -742,8 +807,16 @@ public sealed class SqlGenerator
         _builder.Append(parameter.Prefix).Append(parameter.Name);
     }
 
-    private void WriteLiteral(object? value)
+    private void WriteLiteral(LiteralExpression literal)
     {
+        var rendered = _dialect.RenderLiteral(literal, _options);
+        if (rendered is not null)
+        {
+            _builder.Append(rendered);
+            return;
+        }
+
+        var value = literal.Value;
         switch (value)
         {
             case null:
@@ -792,6 +865,7 @@ public sealed class SqlGenerator
         BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Concatenate } => 6,
         BinaryExpression { Operator: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo } => 7,
         UnaryExpression => 8,
+        ParenthesizedExpression or WindowExpression => 9,
         _ => 9,
     };
 

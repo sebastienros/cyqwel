@@ -1,6 +1,7 @@
 using Cyqwel.Ast;
 using Cyqwel.Dialects;
 using Cyqwel.Generation;
+using Cyqwel.Parsing;
 
 namespace Cyqwel.Tests;
 
@@ -85,6 +86,41 @@ public class GenerationTests
         var expression = Sql.Func("LEN", Sql.Col("name"));
 
         Assert.Equal("LENGTH(name)", expression.ToSql(dialect));
+    }
+
+    [Fact]
+    public void Supports_complete_literal_and_function_rendering()
+    {
+        var dialect = SqlDialectBuilder.Create("application-tsql")
+            .BasedOn(SqlDialects.TSql)
+            .WithLiteralRenderer(static (literal, _) => literal.Value is string text
+                ? $"N'{text.Replace("'", "''", StringComparison.Ordinal)}'"
+                : null)
+            .WithFunctionRenderer(static (function, renderExpression, _) =>
+                function.Name.Value.Equals("NOW", StringComparison.OrdinalIgnoreCase)
+                    ? "getUtcDate()"
+                    : function.Name.Value.Equals("SECOND", StringComparison.OrdinalIgnoreCase)
+                        ? $"datepart(second, {renderExpression(function.Arguments[0])})"
+                        : null)
+            .Build();
+
+        Assert.Equal("N'a''b'", Sql.Lit("a'b").ToSql(dialect));
+        Assert.Equal("getUtcDate()", Sql.Func("NOW").ToSql(dialect));
+        Assert.Equal(
+            "datepart(second, created_at)",
+            Sql.Func("SECOND", Sql.Col("created_at")).ToSql(dialect));
+        Assert.Equal("COUNT(*)", Sql.CountStar().ToSql(dialect));
+    }
+
+    [Fact]
+    public void Generates_window_functions()
+    {
+        var document = SqlParser.Parse(
+            "SELECT COUNT(1) OVER (), ROW_NUMBER() OVER (PARTITION BY region ORDER BY created_at DESC, id)");
+
+        Assert.Equal(
+            "SELECT COUNT(1) OVER (), ROW_NUMBER() OVER (PARTITION BY region ORDER BY created_at DESC, id)",
+            document.ToSql());
     }
 
     [Fact]

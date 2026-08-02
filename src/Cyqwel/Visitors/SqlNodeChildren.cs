@@ -24,6 +24,8 @@ internal static class SqlNodeChildren
                 return value.Parts;
             case StarExpression value:
                 return value.Qualifier ?? Array.Empty<SqlIdentifier>();
+            case ParenthesizedExpression value:
+                return [value.Expression];
             case UnaryExpression value:
                 return [value.Operand];
             case BinaryExpression value:
@@ -36,6 +38,8 @@ internal static class SqlNodeChildren
                 return [value.Expression];
             case FunctionCallExpression value:
                 return FunctionChildren(value);
+            case WindowExpression value:
+                return WindowChildren(value);
             case ExistsExpression value:
                 return [value.Query];
             case SubqueryExpression value:
@@ -68,8 +72,11 @@ internal static class SqlNodeChildren
                 return [value.Column, value.Value];
             case SqlIdentifier:
             case LiteralExpression:
-            case ParameterExpression:
                 return Array.Empty<SqlNode>();
+            case ParameterExpression value:
+                return value.DefaultValue is null
+                    ? Array.Empty<SqlNode>()
+                    : [value.DefaultValue];
             default:
                 throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'.");
         }
@@ -176,6 +183,20 @@ internal static class SqlNodeChildren
     {
         yield return node.Name;
         foreach (var argument in node.Arguments) yield return argument;
+    }
+
+    private static IEnumerable<SqlNode> WindowChildren(WindowExpression node)
+    {
+        yield return node.Expression;
+        if (node.PartitionBy is not null)
+        {
+            foreach (var expression in node.PartitionBy) yield return expression;
+        }
+
+        if (node.OrderBy is not null)
+        {
+            foreach (var item in node.OrderBy) yield return item;
+        }
     }
 
     private static IEnumerable<SqlNode> CaseChildren(CaseExpression node)

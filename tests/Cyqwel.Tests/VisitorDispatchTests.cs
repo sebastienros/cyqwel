@@ -18,12 +18,14 @@ public class VisitorDispatchTests
         typeof(StarExpression),
         typeof(LiteralExpression),
         typeof(ParameterExpression),
+        typeof(ParenthesizedExpression),
         typeof(UnaryExpression),
         typeof(BinaryExpression),
         typeof(BetweenExpression),
         typeof(InExpression),
         typeof(IsNullExpression),
         typeof(FunctionCallExpression),
+        typeof(WindowExpression),
         typeof(ExistsExpression),
         typeof(SubqueryExpression),
         typeof(WhenClause),
@@ -129,7 +131,7 @@ public class VisitorDispatchTests
             new FunctionCallExpression(
                 new SqlIdentifier("COALESCE"),
                 [
-                    new ParameterExpression("fallback"),
+                    new ParameterExpression("fallback", DefaultValue: new LiteralExpression("unknown")),
                     new StarExpression([new SqlIdentifier("source")]),
                 ]));
 
@@ -138,6 +140,11 @@ public class VisitorDispatchTests
                 new SelectItem(caseExpression, new SqlIdentifier("category")),
                 new SelectItem(new SubqueryExpression(subquery)),
                 new SelectItem(new ExistsExpression(subquery)),
+                new SelectItem(new ParenthesizedExpression(new ColumnExpression("grouped"))),
+                new SelectItem(new WindowExpression(
+                    new FunctionCallExpression("ROW_NUMBER"),
+                    [new ColumnExpression("region")],
+                    [new OrderByItem(new ColumnExpression("created_at"))])),
                 new SelectItem(new UnaryExpression(
                     UnaryOperator.Not,
                     new IsNullExpression(new ColumnExpression("deleted_at")))),
@@ -230,12 +237,14 @@ public class VisitorDispatchTests
         protected override void VisitStar(StarExpression node) { Mark(node); base.VisitStar(node); }
         protected override void VisitLiteral(LiteralExpression node) { Mark(node); base.VisitLiteral(node); }
         protected override void VisitParameter(ParameterExpression node) { Mark(node); base.VisitParameter(node); }
+        protected override void VisitParenthesized(ParenthesizedExpression node) { Mark(node); base.VisitParenthesized(node); }
         protected override void VisitUnary(UnaryExpression node) { Mark(node); base.VisitUnary(node); }
         protected override void VisitBinary(BinaryExpression node) { Mark(node); base.VisitBinary(node); }
         protected override void VisitBetween(BetweenExpression node) { Mark(node); base.VisitBetween(node); }
         protected override void VisitIn(InExpression node) { Mark(node); base.VisitIn(node); }
         protected override void VisitIsNull(IsNullExpression node) { Mark(node); base.VisitIsNull(node); }
         protected override void VisitFunctionCall(FunctionCallExpression node) { Mark(node); base.VisitFunctionCall(node); }
+        protected override void VisitWindow(WindowExpression node) { Mark(node); base.VisitWindow(node); }
         protected override void VisitExists(ExistsExpression node) { Mark(node); base.VisitExists(node); }
         protected override void VisitSubquery(SubqueryExpression node) { Mark(node); base.VisitSubquery(node); }
         protected override void VisitWhen(WhenClause node) { Mark(node); base.VisitWhen(node); }
@@ -266,12 +275,14 @@ public class VisitorDispatchTests
         protected override SqlNode VisitDelete(DeleteStatement node) => Mark(node, base.VisitDelete(node));
         protected override SqlNode VisitColumn(ColumnExpression node) => Mark(node, base.VisitColumn(node));
         protected override SqlNode VisitStar(StarExpression node) => Mark(node, base.VisitStar(node));
+        protected override SqlNode VisitParenthesized(ParenthesizedExpression node) => Mark(node, base.VisitParenthesized(node));
         protected override SqlNode VisitUnary(UnaryExpression node) => Mark(node, base.VisitUnary(node));
         protected override SqlNode VisitBinary(BinaryExpression node) => Mark(node, base.VisitBinary(node));
         protected override SqlNode VisitBetween(BetweenExpression node) => Mark(node, base.VisitBetween(node));
         protected override SqlNode VisitIn(InExpression node) => Mark(node, base.VisitIn(node));
         protected override SqlNode VisitIsNull(IsNullExpression node) => Mark(node, base.VisitIsNull(node));
         protected override SqlNode VisitFunctionCall(FunctionCallExpression node) => Mark(node, base.VisitFunctionCall(node));
+        protected override SqlNode VisitWindow(WindowExpression node) => Mark(node, base.VisitWindow(node));
         protected override SqlNode VisitExists(ExistsExpression node) => Mark(node, base.VisitExists(node));
         protected override SqlNode VisitSubquery(SubqueryExpression node) => Mark(node, base.VisitSubquery(node));
         protected override SqlNode VisitWhen(WhenClause node) => Mark(node, base.VisitWhen(node));
@@ -293,8 +304,11 @@ public class VisitorDispatchTests
         protected override SqlNode VisitLiteral(LiteralExpression node) =>
             Mark(node, node with { Span = new SqlTextSpan(0, 0) });
 
-        protected override SqlNode VisitParameter(ParameterExpression node) =>
-            Mark(node, node with { Span = new SqlTextSpan(0, 0) });
+        protected override SqlNode VisitParameter(ParameterExpression node)
+        {
+            var rewritten = (ParameterExpression)base.VisitParameter(node);
+            return Mark(node, rewritten with { Span = new SqlTextSpan(0, 0) });
+        }
 
         private SqlNode Mark(SqlNode original, SqlNode rewritten)
         {

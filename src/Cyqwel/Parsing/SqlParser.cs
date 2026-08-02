@@ -41,6 +41,8 @@ public static class SqlParser
         var BY = Keyword("BY");
         var HAVING = Keyword("HAVING");
         var ORDER = Keyword("ORDER");
+        var OVER = Keyword("OVER");
+        var PARTITION = Keyword("PARTITION");
         var ASC = Keyword("ASC");
         var DESC = Keyword("DESC");
         var NULLS = Keyword("NULLS");
@@ -99,6 +101,10 @@ public static class SqlParser
             .When((_, identifier) =>
                 !reservedWords.Contains(identifier.Value)
                 && (syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$')));
+        var parameterIdentifier = Terms.Identifier()
+            .Then(span => new SqlIdentifier(span.ToString()))
+            .When((_, identifier) =>
+                syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$'));
         var identifierParsers = new List<Parser<SqlIdentifier>>(4);
         if (syntax.IdentifierQuotes.HasFlag(SqlIdentifierQuoteStyle.Brackets))
         {
@@ -126,9 +132,13 @@ public static class SqlParser
         var expression = Deferred<SqlExpression>();
         var query = Deferred<SqlQuery>();
         var tableSource = Deferred<TableSource>();
+        var windowSpecification = Deferred<ParsedWindow>();
 
         var number = Terms.Decimal().Then<SqlExpression>(value =>
-            decimal.Truncate(value) == value && value >= long.MinValue && value <= long.MaxValue
+            decimal.Truncate(value) == value
+                && (decimal.GetBits(value)[3] & 0x00FF0000) == 0
+                && value >= long.MinValue
+                && value <= long.MaxValue
                 ? new LiteralExpression((long)value)
                 : new LiteralExpression(value));
         var text = QuotedString('\'', syntax.SupportsBackslashStringEscapes);
@@ -140,17 +150,33 @@ public static class SqlParser
             .Or(FALSE.Then<SqlExpression>(new LiteralExpression(false)));
         var nullLiteral = NULL.Then<SqlExpression>(new LiteralExpression(null));
 
-        var parameter = CreateParameterParser(simpleIdentifier, syntax.ParameterStyles);
+        var parameterDefault = text.Or(boolean).Or(nullLiteral).Or(number);
+        var parameter = CreateParameterParser(
+            parameterIdentifier,
+            parameterDefault,
+            syntax.ParameterStyles,
+            syntax.SupportsParameterDefaults);
 
         var argumentList = Separated(comma, expression);
         var functionArguments = DISTINCT.Optional()
             .And(argumentList.Or(Always<IReadOnlyList<SqlExpression>>(Array.Empty<SqlExpression>())))
             .Then(value => new ParsedFunctionArguments(value.Item2, value.Item1.HasValue));
-        var function = simpleIdentifier.And(Between(leftParenthesis, functionArguments, rightParenthesis))
-            .Then<SqlExpression>(value => new FunctionCallExpression(
-                value.Item1,
-                value.Item2.Arguments,
-                value.Item2.IsDistinct));
+        var function = simpleIdentifier
+            .And(Between(leftParenthesis, functionArguments, rightParenthesis))
+            .And(OVER.SkipAnd(Between(leftParenthesis, windowSpecification, rightParenthesis)).Optional())
+            .Then<SqlExpression>(value =>
+            {
+                SqlExpression result = new FunctionCallExpression(
+                    value.Item1,
+                    value.Item2.Arguments,
+                    value.Item2.IsDistinct);
+                return value.Item3.HasValue
+                    ? new WindowExpression(
+                        result,
+                        value.Item3.Value.PartitionBy,
+                        value.Item3.Value.OrderBy)
+                    : result;
+            });
 
         var dataTypeArguments = Between(
             leftParenthesis,
@@ -185,7 +211,8 @@ public static class SqlParser
             .Then<SqlExpression>(value => new ExistsExpression(value.Item2, value.Item1.HasValue));
         var subquery = Between(leftParenthesis, query, rightParenthesis)
             .Then<SqlExpression>(value => new SubqueryExpression(value));
-        var grouped = Between(leftParenthesis, expression, rightParenthesis);
+        var grouped = Between(leftParenthesis, expression, rightParenthesis)
+            .Then<SqlExpression>(value => new ParenthesizedExpression(value));
         var qualifiedStar = simpleIdentifier.AndSkip(dot).AndSkip(star)
             .Then<SqlExpression>(qualifier => new StarExpression([qualifier]));
         var starExpression = star.Then<SqlExpression>(new StarExpression());
@@ -317,6 +344,24 @@ public static class SqlParser
         var orExpression = andExpression.LeftAssociative(orOperators.ToArray());
         expression.Parser = orExpression;
 
+        var orderDirection = DESC.Then(OrderDirection.Descending)
+            .Or(ASC.Then(OrderDirection.Ascending));
+        var nullOrder = syntax.SupportsNullOrdering
+            ? NULLS.SkipAnd(FIRST.Then(NullOrder.First).Or(LAST.Then(NullOrder.Last)))
+            : Fail<NullOrder>();
+        var windowOrderItem = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
+            .Then(value => new OrderByItem(
+                value.Item1,
+                value.Item2.HasValue ? value.Item2.Value : OrderDirection.Unspecified,
+                value.Item3.HasValue ? value.Item3.Value : NullOrder.Unspecified));
+        var windowPartitionBy = PARTITION.SkipAnd(BY).SkipAnd(Separated(comma, expression));
+        var windowOrderBy = ORDER.SkipAnd(BY).SkipAnd(Separated(comma, windowOrderItem));
+        windowSpecification.Parser = windowPartitionBy.Optional()
+            .And(windowOrderBy.Optional())
+            .Then(value => new ParsedWindow(
+                value.Item1.HasValue ? value.Item1.Value : null,
+                value.Item2.HasValue ? value.Item2.Value : null));
+
         var alias = AS.SkipAnd(simpleIdentifier).Or(nonKeywordIdentifier);
         var selectItem = expression.And(alias.Optional())
             .Then(value => new SelectItem(
@@ -343,30 +388,31 @@ public static class SqlParser
             .Then(value => new ParsedJoin(
                 value.Item1,
                 value.Item2,
-                value.Item3.HasValue ? value.Item3.Value : null));
+                value.Item3.HasValue ? value.Item3.Value : null,
+                JoinSyntax.Explicit));
         var commaTable = comma.SkipAnd(tablePrimary)
-            .Then(value => new ParsedJoin(JoinKind.Cross, value, null));
+            .Then(value => new ParsedJoin(JoinKind.Cross, value, null, JoinSyntax.Comma));
         tableSource.Parser = tablePrimary.And(ZeroOrMany(join.Or(commaTable)))
             .Then(value =>
             {
                 TableSource result = value.Item1;
                 foreach (var parsedJoin in value.Item2)
                 {
-                    result = new JoinTable(result, parsedJoin.Right, parsedJoin.Kind, parsedJoin.Condition);
+                    result = new JoinTable(
+                        result,
+                        parsedJoin.Right,
+                        parsedJoin.Kind,
+                        parsedJoin.Condition,
+                        parsedJoin.Syntax);
                 }
 
                 return result;
             });
 
-        var orderDirection = DESC.Then(OrderDirection.Descending)
-            .Or(ASC.Then(OrderDirection.Ascending));
-        var nullOrder = syntax.SupportsNullOrdering
-            ? NULLS.SkipAnd(FIRST.Then(NullOrder.First).Or(LAST.Then(NullOrder.Last)))
-            : Fail<NullOrder>();
         var orderItem = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
             .Then(value => new OrderByItem(
                 value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : OrderDirection.Ascending,
+                value.Item2.HasValue ? value.Item2.Value : OrderDirection.Unspecified,
                 value.Item3.HasValue ? value.Item3.Value : NullOrder.Unspecified));
         var orderBy = ORDER.SkipAnd(BY).SkipAnd(Separated(comma, orderItem));
 
@@ -769,7 +815,9 @@ public static class SqlParser
 
     private static Parser<SqlExpression> CreateParameterParser(
         Parser<SqlIdentifier> identifier,
-        SqlParameterStyle styles)
+        Parser<SqlExpression> defaultValue,
+        SqlParameterStyle styles,
+        bool supportsDefaults)
     {
         var parsers = new List<Parser<SqlExpression>>(5);
 
@@ -780,12 +828,12 @@ public static class SqlParser
 
         if (styles.HasFlag(SqlParameterStyle.AtNamed))
         {
-            parsers.Add(NamedParameter('@', identifier));
+            parsers.Add(NamedParameter('@', identifier, defaultValue, supportsDefaults));
         }
 
         if (styles.HasFlag(SqlParameterStyle.ColonNamed))
         {
-            parsers.Add(NamedParameter(':', identifier));
+            parsers.Add(NamedParameter(':', identifier, defaultValue, supportsDefaults));
         }
 
         if (styles.HasFlag(SqlParameterStyle.DollarNumbered))
@@ -799,7 +847,7 @@ public static class SqlParser
 
         if (styles.HasFlag(SqlParameterStyle.DollarNamed))
         {
-            parsers.Add(NamedParameter('$', identifier));
+            parsers.Add(NamedParameter('$', identifier, defaultValue, supportsDefaults));
         }
 
         return parsers.Count == 0 ? Fail<SqlExpression>() : OneOf(parsers.ToArray());
@@ -807,10 +855,23 @@ public static class SqlParser
 
     private static Parser<SqlExpression> NamedParameter(
         char prefix,
-        Parser<SqlIdentifier> identifier) =>
-        Terms.Char(prefix)
-            .SkipAnd(identifier)
-            .Then<SqlExpression>(value => new ParameterExpression(value.Value, prefix));
+        Parser<SqlIdentifier> identifier,
+        Parser<SqlExpression> defaultValue,
+        bool supportsDefaults)
+    {
+        var name = Terms.Char(prefix).SkipAnd(identifier);
+        if (!supportsDefaults)
+        {
+            return name.Then<SqlExpression>(value => new ParameterExpression(value.Value, prefix));
+        }
+
+        return name
+            .And(Terms.Char(':').SkipAnd(defaultValue).Optional())
+            .Then<SqlExpression>(value => new ParameterExpression(
+                value.Item1.Value,
+                prefix,
+                value.Item2.HasValue ? value.Item2.Value : null));
+    }
 
     private static SqlQuery ApplyQueryTail(
         SqlQuery query,
@@ -848,9 +909,17 @@ public static class SqlParser
 
     private sealed record InTarget(IReadOnlyList<SqlExpression> Values, SqlQuery? Query);
 
-    private sealed record ParsedJoin(JoinKind Kind, TableSource Right, SqlExpression? Condition);
+    private sealed record ParsedJoin(
+        JoinKind Kind,
+        TableSource Right,
+        SqlExpression? Condition,
+        JoinSyntax Syntax);
 
     private sealed record ParsedFunctionArguments(IReadOnlyList<SqlExpression> Arguments, bool IsDistinct);
+
+    private sealed record ParsedWindow(
+        IReadOnlyList<SqlExpression>? PartitionBy,
+        IReadOnlyList<OrderByItem>? OrderBy);
 
     private sealed record ParsedTop(SqlExpression Expression, bool IsPercent, bool WithTies);
 

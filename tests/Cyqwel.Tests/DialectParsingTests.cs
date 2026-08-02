@@ -64,7 +64,7 @@ public class DialectParsingTests
         Assert.True(select.IsTopPercent);
         Assert.True(select.WithTies);
         Assert.Equal(
-            "SELECT TOP (10) PERCENT WITH TIES id FROM users ORDER BY id ASC",
+            "SELECT TOP (10) PERCENT WITH TIES id FROM users ORDER BY id",
             document.ToSql(SqlDialects.TSql));
         Assert.Throws<NotSupportedException>(() => document.ToSql(SqlDialects.PostgreSql));
 
