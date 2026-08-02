@@ -1,3 +1,5 @@
+![Cyqwel](https://raw.githubusercontent.com/sebastienros/cyqwel/main/assets/banner.png)
+
 # Cyqwel
 
 Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutable C# syntax tree that can be inspected, transformed, validated, generated for another dialect, or created with fluent builders.
