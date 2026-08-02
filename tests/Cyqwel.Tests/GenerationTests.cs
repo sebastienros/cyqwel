@@ -1,3 +1,4 @@
+using System.Globalization;
 using Cyqwel.Ast;
 using Cyqwel.Dialects;
 using Cyqwel.Generation;
@@ -20,6 +21,25 @@ public class GenerationTests
         Assert.Equal(
             "SELECT u.id, u.name FROM users AS u WHERE u.age > 18 ORDER BY u.name ASC LIMIT 10",
             query.ToSql());
+    }
+
+    [Fact]
+    public void Generates_culture_invariant_numeric_literals()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+
+            var sql = Sql.Select(Sql.Lit(1234.5m), Sql.Lit(6.25d), Sql.Lit(7.75f)).ToSql();
+
+            Assert.Equal("SELECT 1234.5, 6.25, 7.75", sql);
+            Assert.Equal(sql, SqlParser.Parse(sql).ToSql());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]
