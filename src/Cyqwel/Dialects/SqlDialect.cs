@@ -70,6 +70,10 @@ public class SqlDialect
 
     public virtual bool SupportsTableAliasAs => true;
 
+    public virtual bool SupportsExplain => ParserOptions.SupportsExplainOptions;
+
+    public virtual bool UsesSqlSecurityForViews => false;
+
     public virtual SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.DoublePipe;
 
     public virtual SqlDialectParserOptions ParserOptions => SqlDialectParserOptions.Permissive;
@@ -193,8 +197,16 @@ public static class SqlDialects
         public override string TrueLiteral => "1";
         public override string FalseLiteral => "0";
 
-        public override string GetFunctionName(string name) =>
-            name.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase) ? "GETDATE" : name;
+        public override string GetFunctionName(string name) => name.ToUpperInvariant() switch
+        {
+            "CURRENT_TIMESTAMP" or "NOW" => "GETDATE",
+            "CLOCK_TIMESTAMP" => "SYSDATETIME",
+            "LN" => "LOG",
+            "CHR" => "CHAR",
+            "REPEAT" => "REPLICATE",
+            _ => name,
+        };
+
     }
 
     private sealed class SqliteDialect() : SqlDialect("sqlite")
@@ -219,8 +231,84 @@ public static class SqlDialects
         public override string TrueLiteral => "1";
         public override string FalseLiteral => "0";
 
-        public override string GetFunctionName(string name) =>
-            name.Equals("NOW", StringComparison.OrdinalIgnoreCase) ? "DATETIME" : name;
+        public override string GetFunctionName(string name) => name.ToUpperInvariant() switch
+        {
+            "NOW" => "DATETIME",
+            "LEAST" => "MIN",
+            "GREATEST" => "MAX",
+            "JSON_AGG" or "JSONB_AGG" => "JSON_GROUP_ARRAY",
+            "JSON_OBJECT_AGG" => "JSON_GROUP_OBJECT",
+            "JSON_BUILD_OBJECT" => "JSON_OBJECT",
+            "JSON_BUILD_ARRAY" => "JSON_ARRAY",
+            _ => name,
+        };
+
+        public override SqlNode TransformNode(SqlNode node) => node switch
+        {
+            ExtractExpression value when TryCreateDatePart(value.Field.Value, value.Expression, out var replacement) =>
+                replacement,
+            FunctionCallExpression value when TryTransformDateFunction(value, out var replacement) =>
+                replacement,
+            _ => node,
+        };
+
+        private static bool TryTransformDateFunction(
+            FunctionCallExpression function,
+            out SqlExpression replacement)
+        {
+            replacement = null!;
+            if (function.Arguments.Count != 2
+                || function.Arguments[0] is not LiteralExpression { Value: string part })
+            {
+                return false;
+            }
+
+            if (function.Name.Value.Equals("DATE_PART", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryCreateDatePart(part, function.Arguments[1], out replacement);
+            }
+
+            if (!function.Name.Value.Equals("DATE_TRUNC", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            replacement = part.ToUpperInvariant() switch
+            {
+                "MONTH" => Strftime("%Y-%m-01", function.Arguments[1]),
+                "HOUR" => Strftime("%Y-%m-%d %H:00:00", function.Arguments[1]),
+                "MINUTE" => Strftime("%Y-%m-%d %H:%M:00", function.Arguments[1]),
+                "SECOND" => Strftime("%Y-%m-%d %H:%M:%S", function.Arguments[1]),
+                "DAY" => new FunctionCallExpression("DATE", function.Arguments[1]),
+                _ => null!,
+            };
+            return replacement is not null;
+        }
+
+        private static bool TryCreateDatePart(
+            string part,
+            SqlExpression expression,
+            out SqlExpression replacement)
+        {
+            var (format, dataType) = part.ToUpperInvariant() switch
+            {
+                "YEAR" => ("%Y", "INTEGER"),
+                "HOUR" => ("%H", "INTEGER"),
+                "MINUTE" => ("%M", "INTEGER"),
+                "SECOND" => ("%f", "REAL"),
+                "DOW" => ("%w", "INTEGER"),
+                "DOY" => ("%j", "INTEGER"),
+                "EPOCH" => ("%s", "REAL"),
+                _ => (null, null),
+            };
+            replacement = format is null
+                ? null!
+                : new CastExpression(Strftime(format, expression), new SqlDataType(dataType!));
+            return replacement is not null;
+        }
+
+        private static FunctionCallExpression Strftime(string format, SqlExpression expression) =>
+            new("STRFTIME", new LiteralExpression(format), expression);
     }
 
     private sealed class PostgreSqlDialect() : SqlDialect("postgresql")
@@ -236,6 +324,7 @@ public static class SqlDialects
             SupportsReturning = true,
             SupportsILike = true,
             SupportsNullOrdering = true,
+            SupportsExplainOptions = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
     }
@@ -244,6 +333,7 @@ public static class SqlDialects
     {
         public override bool SupportsReturning => false;
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Function;
+        public override bool UsesSqlSecurityForViews => true;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.Backtick,
@@ -256,6 +346,7 @@ public static class SqlDialects
             SupportsReturning = false,
             SupportsILike = false,
             SupportsNullOrdering = false,
+            SupportsCreateViewSecurity = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.LogicalOr,
         };
 
@@ -281,6 +372,7 @@ public static class SqlDialects
             SupportsRecursiveCte = false,
             SupportsHierarchicalQueries = true,
             SupportsTableAliasAs = false,
+            SupportsOracleDataTypes = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
 
@@ -493,6 +585,7 @@ public sealed class SqlDialectBuilder
         public override bool SupportsReturningInto => baseDialect.SupportsReturningInto;
         public override bool RequiresOrderByForOffset => baseDialect.RequiresOrderByForOffset;
         public override bool SupportsTableAliasAs => baseDialect.SupportsTableAliasAs;
+        public override bool UsesSqlSecurityForViews => baseDialect.UsesSqlSecurityForViews;
         public override SqlConcatenationStyle ConcatenationStyle => baseDialect.ConcatenationStyle;
         public override SqlDialectParserOptions ParserOptions { get; } =
             parserOptions is null

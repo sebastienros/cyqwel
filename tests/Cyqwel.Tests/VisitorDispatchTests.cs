@@ -10,6 +10,7 @@ public class VisitorDispatchTests
         typeof(SqlDocument),
         typeof(SelectStatement),
         typeof(SetOperationStatement),
+        typeof(ExplainStatement),
         typeof(InsertStatement),
         typeof(UpdateStatement),
         typeof(DeleteStatement),
@@ -212,7 +213,13 @@ public class VisitorDispatchTests
             new IsNullExpression(new ColumnExpression("deleted_at"), true),
             [new ColumnExpression("id")]);
 
-        return new SqlDocument(select, set, insert, update, delete);
+        return new SqlDocument(
+            select,
+            set,
+            new ExplainStatement(SimpleSelect("explain_source")),
+            insert,
+            update,
+            delete);
     }
 
     private static SelectStatement SimpleSelect(string table) =>
@@ -229,6 +236,7 @@ public class VisitorDispatchTests
         protected override void VisitDocument(SqlDocument node) { Mark(node); base.VisitDocument(node); }
         protected override void VisitSelect(SelectStatement node) { Mark(node); base.VisitSelect(node); }
         protected override void VisitSetOperation(SetOperationStatement node) { Mark(node); base.VisitSetOperation(node); }
+        protected override void VisitExplain(ExplainStatement node) { Mark(node); base.VisitExplain(node); }
         protected override void VisitInsert(InsertStatement node) { Mark(node); base.VisitInsert(node); }
         protected override void VisitUpdate(UpdateStatement node) { Mark(node); base.VisitUpdate(node); }
         protected override void VisitDelete(DeleteStatement node) { Mark(node); base.VisitDelete(node); }
@@ -270,6 +278,7 @@ public class VisitorDispatchTests
         protected override SqlNode VisitDocument(SqlDocument node) => Mark(node, base.VisitDocument(node));
         protected override SqlNode VisitSelect(SelectStatement node) => Mark(node, base.VisitSelect(node));
         protected override SqlNode VisitSetOperation(SetOperationStatement node) => Mark(node, base.VisitSetOperation(node));
+        protected override SqlNode VisitExplain(ExplainStatement node) => Mark(node, base.VisitExplain(node));
         protected override SqlNode VisitInsert(InsertStatement node) => Mark(node, base.VisitInsert(node));
         protected override SqlNode VisitUpdate(UpdateStatement node) => Mark(node, base.VisitUpdate(node));
         protected override SqlNode VisitDelete(DeleteStatement node) => Mark(node, base.VisitDelete(node));

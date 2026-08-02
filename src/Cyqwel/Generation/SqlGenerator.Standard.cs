@@ -434,6 +434,19 @@ public sealed partial class SqlGenerator
             Keyword("TEMPORARY");
         }
 
+        if (create.Security is not null)
+        {
+            if (!_dialect.UsesSqlSecurityForViews)
+            {
+                Unsupported($"{_dialect.Name} cannot represent SQL SECURITY on a view.");
+            }
+
+            Space();
+            Keyword("SQL SECURITY");
+            Space();
+            Keyword(create.Security == ViewSecurity.Definer ? "DEFINER" : "INVOKER");
+        }
+
         Space();
         Keyword("VIEW");
         Space();

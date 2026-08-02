@@ -17,6 +17,7 @@ public abstract partial class SqlRewriter
             SelectStatement value => VisitSelect(value),
             ValuesStatement value => VisitValues(value),
             SetOperationStatement value => VisitSetOperation(value),
+            ExplainStatement value => VisitExplain(value),
             InsertStatement value => VisitInsert(value),
             UpdateStatement value => VisitUpdate(value),
             DeleteStatement value => VisitDelete(value),
@@ -95,6 +96,9 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitDocument(SqlDocument node) =>
         Update(node, VisitList(node.Statements), node.Statements, static (n, statements) => n with { Statements = statements });
+
+    protected virtual SqlNode VisitExplain(ExplainStatement node) =>
+        Update(node, Visit(node.Query), node.Query, static (n, query) => n with { Query = query });
 
     protected virtual SqlNode VisitSelect(SelectStatement node)
     {
@@ -391,8 +395,15 @@ public abstract partial class SqlRewriter
             : node with { Expression = expression, DataType = dataType };
     }
 
-    protected virtual SqlNode VisitDataType(SqlDataType node) =>
-        Update(node, Visit(node.Name), node.Name, static (n, name) => n with { Name = name });
+    protected virtual SqlNode VisitDataType(SqlDataType node)
+    {
+        var name = Visit(node.Name);
+        var intervalEndField = VisitOptional(node.IntervalEndField);
+        return ReferenceEquals(name, node.Name)
+            && ReferenceEquals(intervalEndField, node.IntervalEndField)
+                ? node
+                : node with { Name = name, IntervalEndField = intervalEndField };
+    }
 
     protected virtual SqlNode VisitTableName(TableName node) =>
         Update(node, VisitList(node.Parts), node.Parts, static (n, parts) => n with { Parts = parts });

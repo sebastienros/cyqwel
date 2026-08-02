@@ -175,9 +175,27 @@ public sealed record CastExpression(SqlExpression Expression, SqlDataType DataTy
 
 public sealed record TryCastExpression(SqlExpression Expression, SqlDataType DataType) : SqlExpression;
 
+public enum SqlDataTypeLengthUnit
+{
+    Unspecified,
+    Byte,
+    Char,
+}
+
+public enum SqlDataTypeTimeZone
+{
+    Unspecified,
+    WithTimeZone,
+    WithLocalTimeZone,
+}
+
 public sealed record SqlDataType(
     SqlIdentifier Name,
-    IReadOnlyList<int>? Arguments = null) : SqlNode
+    IReadOnlyList<int>? Arguments = null,
+    SqlDataTypeLengthUnit LengthUnit = SqlDataTypeLengthUnit.Unspecified,
+    SqlDataTypeTimeZone TimeZone = SqlDataTypeTimeZone.Unspecified,
+    SqlIdentifier? IntervalEndField = null,
+    IReadOnlyList<int>? IntervalEndArguments = null) : SqlNode
 {
     public SqlDataType(string name, params int[] arguments)
         : this(new SqlIdentifier(name), arguments.Length == 0 ? null : arguments)

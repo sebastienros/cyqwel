@@ -162,12 +162,19 @@ public sealed record TruncateStatement(
     bool RestartIdentity = false,
     bool Cascade = false) : SqlStatement;
 
+public enum ViewSecurity
+{
+    Definer,
+    Invoker,
+}
+
 public sealed record CreateViewStatement(
     TableName Name,
     SqlQuery Query,
     IReadOnlyList<SqlIdentifier>? Columns = null,
     bool OrReplace = false,
-    bool IsTemporary = false) : SqlStatement;
+    bool IsTemporary = false,
+    ViewSecurity? Security = null) : SqlStatement;
 
 public sealed record IndexColumn(
     SqlExpression Expression,

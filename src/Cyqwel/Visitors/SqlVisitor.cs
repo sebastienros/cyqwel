@@ -17,6 +17,7 @@ public abstract partial class SqlVisitor
             case SelectStatement value: VisitSelect(value); break;
             case ValuesStatement value: VisitValues(value); break;
             case SetOperationStatement value: VisitSetOperation(value); break;
+            case ExplainStatement value: VisitExplain(value); break;
             case InsertStatement value: VisitInsert(value); break;
             case UpdateStatement value: VisitUpdate(value); break;
             case DeleteStatement value: VisitDelete(value); break;
@@ -102,6 +103,7 @@ public abstract partial class SqlVisitor
     protected virtual void VisitDocument(SqlDocument node) => DefaultVisit(node);
     protected virtual void VisitSelect(SelectStatement node) => DefaultVisit(node);
     protected virtual void VisitSetOperation(SetOperationStatement node) => DefaultVisit(node);
+    protected virtual void VisitExplain(ExplainStatement node) => DefaultVisit(node);
     protected virtual void VisitInsert(InsertStatement node) => DefaultVisit(node);
     protected virtual void VisitUpdate(UpdateStatement node) => DefaultVisit(node);
     protected virtual void VisitDelete(DeleteStatement node) => DefaultVisit(node);

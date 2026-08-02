@@ -46,6 +46,11 @@ public sealed record SetOperationStatement(
     bool IsRecursive = false,
     IReadOnlyList<CommonTableExpression>? CommonTableExpressions = null) : SqlQuery;
 
+public sealed record ExplainStatement(
+    SqlQuery Query,
+    bool Analyze = false,
+    bool IsQueryParenthesized = false) : SqlStatement;
+
 public sealed record InsertStatement(
     TableName Target,
     IReadOnlyList<SqlIdentifier>? Columns,
