@@ -1,82 +1,147 @@
 # Cyqwel
 
-Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutable C# AST, traverses or rewrites that tree, generates SQL for another dialect, and builds queries without concatenating SQL strings.
+Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutable C# syntax tree that can be inspected, transformed, validated, generated for another dialect, or created with fluent builders.
 
 ## Features
 
-- Shared AST for Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, and Oracle
-- Reusable, compiled [Parlot](https://github.com/sebastienros/parlot) parser graphs cached by dialect configuration
-- Strict dialect parsing with distinct quote, parameter, operator, clause, and DML rules
-- Read-only visitor, non-mutating rewriter, depth-first and breadth-first traversal
-- Dialect-aware generation and transpilation
-- Window functions with `OVER`, `PARTITION BY`, and window ordering
-- Window frames, named window definitions, aggregate `FILTER`, and `WITHIN GROUP`
-- `VALUES` queries, `MERGE`, extended DML, and core relational DDL
-- PostgreSQL `EXPLAIN` options and SQLite date, JSON aggregate, and scalar-function rewrites
-- Oracle bind variables, `MINUS`, sequences, hierarchical queries, row limiting, and native type forms
-- Public dialect base class, registry, and fluent custom dialect builder
-- Syntax, semantic, schema, type, and relationship-aware SQL validation
-- Custom literal and argument-aware function rendering hooks
-- Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
-- Input and AST complexity guards
-- Pooled SQL generation buffers
+- Parse SQL using Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, or Oracle syntax
+- Inspect and transform SQL through a shared syntax tree
+- Generate, transpile, and format dialect-aware SQL
+- Validate SQL syntax, semantics, schemas, types, and relationships
+- Build queries and data modification statements with a fluent API
+- Define and register custom SQL dialects
 
-## Parse, inspect, and generate
+## Install
+
+```bash
+dotnet add package Cyqwel
+```
+
+## Parse SQL
+
+Select a dialect when the input uses dialect-specific syntax:
 
 ```csharp
 using Cyqwel.Dialects;
-using Cyqwel.Visitors;
 
 var document = SqlDialects.TSql.Parse(
     "SELECT TOP 10 [display name] FROM [users]");
 
-var columns = document.GetColumnNames();
-var postgres = SqlDialects.PostgreSql.Generate(document);
-// SELECT "display name" FROM "users" LIMIT 10
+var statement = document.Statements[0];
 ```
 
-`SqlParser.TryParse` returns a structured `SqlParseError` when input is invalid. `SqlParseOptions` controls maximum input length and AST node count.
-
-Dialects can opt into application parameter defaults such as `@pageSize:10` with
-`SqlDialectParserOptions.SupportsParameterDefaults`. It is disabled by default. When
-enabled, `ParameterExpression.DefaultValue` exposes the literal default without emitting
-it as part of the generated database command.
-
-Dialect entry points enforce source compatibility:
+`Parse` throws `SqlParseException` for invalid or incompatible SQL. Use `TryParse` when parse failures are expected:
 
 ```csharp
-SqlDialects.TSql.Parse("SELECT TOP 10 [id] FROM [users]"); // accepted
-SqlDialects.PostgreSql.Parse("SELECT TOP 10 id FROM users"); // throws SqlParseException
+if (!SqlDialects.PostgreSql.TryParse(
+    "SELECT * FROM users",
+    out var document,
+    out var error))
+{
+    Console.WriteLine($"{error!.Code}: {error.Message}");
+}
 ```
 
-An otherwise recognized construct that is incompatible with the selected dialect returns `SqlParseErrorCode.DialectIncompatible`. Dialect selection also resolves ambiguous syntax in the source AST; for example, `||` becomes concatenation in PostgreSQL and SQLite but logical `OR` in MySQL.
+## Inspect and transform SQL
+
+Traversal helpers expose tables, columns, node types, and depth-first or breadth-first enumeration. Transforms return a new tree and leave the source unchanged.
+
+```csharp
+using Cyqwel;
+using Cyqwel.Dialects;
+using Cyqwel.Visitors;
+
+var source = SqlDialects.PostgreSql.Parse(
+    "SELECT u.id FROM users AS u");
+
+var tables = source.GetTableNames();   // ["users"]
+var columns = source.GetColumnNames(); // ["u.id"]
+
+var transformed = source
+    .RenameTable("users", "accounts")
+    .RenameColumn("id", "account_id");
+
+var sql = transformed.ToSql(SqlDialects.PostgreSql);
+// SELECT u.account_id FROM accounts AS u
+```
+
+Derive from `SqlVisitor` for typed, read-only analysis or from `SqlRewriter` for custom non-mutating transformations. `FindAll<T>`, `DescendantsAndSelf`, and `BreadthFirst` support direct tree queries.
+
+## Generate, transpile, and format SQL
+
+Generate a syntax tree for any built-in dialect, or transpile directly from a known source dialect:
+
+```csharp
+using Cyqwel.Dialects;
+
+var postgres = SqlDialects.TSql.Transpile(
+    "SELECT TOP 10 [id] FROM [users]",
+    SqlDialects.PostgreSql);
+
+// SELECT "id" FROM "users" LIMIT 10
+```
+
+Use `SqlGenerationOptions` to produce formatted SQL:
+
+```csharp
+using Cyqwel.Generation;
+using Cyqwel.Parsing;
+
+var document = SqlParser.Parse(
+    "select id, name from users where active = true");
+
+var formatted = document.ToSql(options: new SqlGenerationOptions
+{
+    PrettyPrint = true,
+    IndentSize = 2,
+});
+
+// SELECT
+//   id, name
+// FROM users
+// WHERE active = TRUE
+```
+
+Generation uses the target dialect's identifier quoting, parameters, functions, and row-limiting syntax. Unsupported constructs throw by default.
 
 ## Validate SQL
 
-`SqlValidator` returns stable diagnostics with a severity, code, message, and source location when the parser or AST provides one. Warnings do not make `IsValid` false.
+`SqlValidator` returns diagnostics with a severity, code, message, and source location. Syntax and semantic validation work without a schema:
 
 ```csharp
+using Cyqwel.Dialects;
 using Cyqwel.Validation;
 
-var syntax = SqlValidator.Validate(
+var result = SqlValidator.Validate(
     "SELECT * FROM users LIMIT 10",
-    options: new SqlValidationOptions
+    SqlDialects.PostgreSql,
+    new SqlValidationOptions
     {
         StrictSyntax = true,
         Semantic = true,
     });
+
+foreach (var diagnostic in result.Diagnostics)
+{
+    Console.WriteLine($"{diagnostic.Code}: {diagnostic.Message}");
+}
+```
+
+Provide a catalog to validate table and column names, data types, and relationships:
+
+```csharp
+using Cyqwel.Validation;
 
 var catalog = new SqlSchemaCatalog(
     new SqlTableSchema(
         "users",
         [
             new("id", "integer", IsPrimaryKey: true),
-            new("name", "varchar"),
             new("age", "integer"),
         ],
         PrimaryKey: ["id"]));
 
-var schema = SqlValidator.Validate(
+var result = SqlValidator.Validate(
     "SELECT id FROM users WHERE age > 18",
     catalog,
     options: new SqlSchemaValidationOptions
@@ -84,13 +149,18 @@ var schema = SqlValidator.Validate(
         CheckTypes = true,
         CheckReferences = true,
     });
+
+if (!result.IsValid)
+{
+    // Handle validation errors.
+}
 ```
 
-Semantic validation can flag `SELECT *`, mixed aggregate projections without `GROUP BY`, `DISTINCT` ordering concerns, and non-deterministic `LIMIT`/`OFFSET`. Schema validation resolves tables, aliases, joins, derived tables, and CTE projections. Type checks cover comparisons, arithmetic, predicates, supported function signatures, DML assignments, and set operations. Reference checks validate foreign-key metadata, ambiguous references, cartesian joins, and joins that bypass declared relationships.
-
-Schema, type, and reference findings are errors by default. Set `SqlSchemaValidationOptions.Strict` to `false` to report them as warnings. Diagnostic code constants are available from `SqlValidationCodes`, and schema type names can be normalized with `SqlTypeFamilies.Classify`.
+Schema findings are errors by default. Set `SqlSchemaValidationOptions.Strict` to `false` to report them as warnings.
 
 ## Build SQL
+
+Fluent builders create the same syntax tree types as the parser:
 
 ```csharp
 using Cyqwel;
@@ -98,61 +168,40 @@ using Cyqwel.Dialects;
 
 var query = Sql.Select("u.id", "u.name")
     .From("users", "u")
-    .Where(Sql.Col("u.age").GreaterThan(Sql.Lit(18)))
+    .Where(Sql.Col("u.age").GreaterThan(Sql.Param("minimumAge")))
     .OrderBy(Sql.Col("u.name"))
     .Limit(10)
     .Build();
 
 var sql = query.ToSql(SqlDialects.PostgreSql);
+// SELECT u.id, u.name FROM users AS u
+// WHERE u.age > @minimumAge ORDER BY u.name ASC LIMIT 10
 ```
 
-Builders produce the same AST types as the parser and contain no dialect-specific logic.
-
-## Traverse and transform
-
-Derive from `SqlVisitor` for read-only analysis or `SqlRewriter` for bottom-up, non-mutating transformations. Unchanged subtrees retain their original object references.
-
-```csharp
-using Cyqwel.Ast;
-using Cyqwel.Visitors;
-
-sealed class ParameterRewriter : SqlRewriter
-{
-    protected override SqlNode VisitLiteral(LiteralExpression node) =>
-        node.Value is string ? new ParameterExpression("value") : node;
-}
-
-var rewritten = query.Accept(new ParameterRewriter());
-```
-
-`DescendantsAndSelf`, `BreadthFirst`, `FindAll<T>`, `GetTableNames`, and `GetColumnNames` provide efficient tree inspection. Convenience transforms include `AddWhere`, `SetLimit`, `RenameTable`, and `RenameColumn`.
+Builders are available for `SELECT`, set operations, `INSERT`, `UPDATE`, `DELETE`, `CASE`, and expressions.
 
 ## Extend dialects
 
-Subclass `SqlDialect` for full control, or compose a dialect:
+Create a dialect from an existing one and override only the behavior your application needs:
 
 ```csharp
+using Cyqwel;
+using Cyqwel.Dialects;
+
 var warehouse = SqlDialectBuilder.Create("warehouse")
     .BasedOn(SqlDialects.PostgreSql)
-    .WithFunctionNameTransform(name => name == "LEN" ? "LENGTH" : name)
-    .ConfigureParser(options => options with
-    {
-        IdentifierQuotes = options.IdentifierQuotes | SqlIdentifierQuoteStyle.Backtick,
-    })
+    .WithFunctionNameTransform(name =>
+        name.Equals("LEN", StringComparison.OrdinalIgnoreCase)
+            ? "LENGTH"
+            : name)
     .Register();
+
+var sql = warehouse.Generate(Sql.Func("LEN", Sql.Col("name")));
+// LENGTH(name)
 ```
 
-Custom dialects inherit the base dialect's parser configuration and can modify only the required rules. Built-in aliases such as `mssql`, `sqlserver`, and `postgres` are available through `SqlDialectRegistry`.
+Custom dialects can configure parsing, transform syntax nodes, and customize literal or function rendering. Registered dialects are available by name through `SqlDialectRegistry`.
 
-## Supported SQL surface
+## Supported dialects
 
-Cyqwel handles:
-
-- Queries: `SELECT`, `VALUES`, joins with `ON` or `USING`, natural joins, predicates, grouping, ordering, row limits, recursive/materialized CTEs, named windows, window frames, and set operations.
-- Expressions: functions and aggregate modifiers, `CASE`, `CAST`/`TRY_CAST`, rows, intervals, extraction, collation, sequences, subqueries, parameters, boolean tests, and common unary and binary operators.
-- DML: `INSERT VALUES`/`SELECT`, `UPDATE ... FROM`, `DELETE ... USING`, `MERGE`, `RETURNING`, and Oracle `RETURNING ... INTO`.
-- DDL: create/alter/drop/truncate tables, columns and common constraints, views (including MySQL `SQL SECURITY`), indexes, and sequences.
-- PostgreSQL: parenthesized `EXPLAIN` options with `ANALYZE` preservation and common SQLite/T-SQL function rewrites.
-- Oracle: colon bind variables, `MINUS`, `FETCH FIRST`, `NEXTVAL`/`CURRVAL`, `START WITH`/`CONNECT BY`, `PRIOR`, `ORDER SIBLINGS BY`, native numeric/character/temporal/interval type forms, and common function normalization.
-
-The built-in scope targets standard relational databases. Warehouse-only statements and engine-specific administration commands remain outside the shared AST unless they overlap common RDBMS SQL.
+Cyqwel includes Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, and Oracle dialects. The shared syntax tree covers common relational queries, data modification, and schema statements while dialects handle source compatibility and target-specific SQL generation.
