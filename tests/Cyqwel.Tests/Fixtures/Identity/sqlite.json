@@ -1,0 +1,186 @@
+{
+  "dialect": "sqlite",
+  "provenance": {
+    "source": "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/dialects/test_sqlite.py",
+    "sqlglotTag": "v30.12.0",
+    "sqlglotCommit": "64e268a5d95cd84a87ad74ef569fc9bf356fd3fb",
+    "extractor": "tobilg/polyglot tools/sqlglot-extract/extract-tests.py at 7c4f1f20197377e220e479c78dc1a8b6e64ced0b",
+    "note": "Polyglot does not commit generated fixture blobs; these cases were regenerated from its pinned SQLGlot tag."
+  },
+  "selection": "Statically ported cases whose syntax is represented by Cyqwel; the test harness never filters or skips cases at runtime.",
+  "excludedCategories": [
+    "Administrative, procedural, trigger, grant, hint, and engine table-option syntax outside Cyqwel relational AST scope.",
+    "Advanced extension syntax not represented by Cyqwel, including JSON/path operators, arrays and ranges, table functions, PIVOT, MATCH_RECOGNIZE, and TABLESAMPLE.",
+    "Cases that assert SQLGlot warning, error, formatting, or identifier-normalization behavior rather than parse/generate stability."
+  ],
+  "cases": [
+    {
+      "name": "sqlite-identity-0",
+      "sourceIndex": 0,
+      "sql": "WITH xyz(x) AS (SELECT 1) SELECT x FROM xyz",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-5",
+      "sourceIndex": 5,
+      "sql": "SELECT match FROM t",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-7",
+      "sourceIndex": 7,
+      "sql": "SELECT RANK() OVER (RANGE CURRENT ROW) FROM tbl",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-9",
+      "sourceIndex": 9,
+      "sql": "SELECT DATE()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-10",
+      "sourceIndex": 10,
+      "sql": "SELECT DATE('now', 'start of month', '+1 month', '-1 day')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-11",
+      "sourceIndex": 11,
+      "sql": "SELECT DATETIME(1092941466, 'unixepoch')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-12",
+      "sourceIndex": 12,
+      "sql": "SELECT DATETIME(1092941466, 'auto')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-13",
+      "sourceIndex": 13,
+      "sql": "SELECT DATETIME(1092941466, 'unixepoch', 'localtime')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-14",
+      "sourceIndex": 14,
+      "sql": "SELECT UNIXEPOCH()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-15",
+      "sourceIndex": 15,
+      "sql": "SELECT JULIANDAY('now') - JULIANDAY('1776-07-04')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-16",
+      "sourceIndex": 16,
+      "sql": "SELECT UNIXEPOCH() - UNIXEPOCH('2004-01-01 02:34:56')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-17",
+      "sourceIndex": 17,
+      "sql": "SELECT DATE('now', 'start of year', '+9 months', 'weekday 2')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-18",
+      "sourceIndex": 18,
+      "sql": "SELECT (JULIANDAY('now') - 2440587.5) * 86400.0",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-19",
+      "sourceIndex": 19,
+      "sql": "SELECT UNIXEPOCH('now', 'subsec')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-20",
+      "sourceIndex": 20,
+      "sql": "SELECT TIMEDIFF('now', '1809-02-12')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-22",
+      "sourceIndex": 22,
+      "sql": "SELECT INSTR(haystack, needle)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-23",
+      "sourceIndex": 23,
+      "sql": "SELECT a, SUM(b) OVER (ORDER BY a ROWS BETWEEN -1 PRECEDING AND 1 FOLLOWING) FROM t1 ORDER BY 1",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-24",
+      "sourceIndex": 24,
+      "sql": "SELECT JSON_EXTRACT('[10, 20, [30, 40]]', '$[2]', '$[0]', '$[1]')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-25",
+      "sourceIndex": 25,
+      "sql": "SELECT item AS \"item\", some AS \"some\" FROM data WHERE (item = 'value_1' COLLATE NOCASE) AND (some = 't' COLLATE NOCASE) ORDER BY item ASC LIMIT 1 OFFSET 0",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-28",
+      "sourceIndex": 28,
+      "sql": "SELECT * FROM t1, t2",
+      "upstreamExpected": "SELECT * FROM t1 CROSS JOIN t2"
+    },
+    {
+      "name": "sqlite-identity-30",
+      "sourceIndex": 30,
+      "sql": "ALTER TABLE t1 RENAME TO t2",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-32",
+      "sourceIndex": 32,
+      "sql": "SELECT JSON_OBJECT('col1', 1, 'col2', '1')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-33",
+      "sourceIndex": 33,
+      "sql": "CREATE TABLE \"foo t\" (\"foo t id\" TEXT NOT NULL, PRIMARY KEY (\"foo t id\"))",
+      "upstreamExpected": "CREATE TABLE \"foo t\" (\"foo t id\" TEXT NOT NULL PRIMARY KEY)"
+    },
+    {
+      "name": "sqlite-identity-42",
+      "sourceIndex": 42,
+      "sql": "SELECT SQLITE_VERSION()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-43",
+      "sourceIndex": 43,
+      "sql": "SELECT STRFTIME('%Y/%m/%d', 'now')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-44",
+      "sourceIndex": 44,
+      "sql": "SELECT STRFTIME('%Y-%m-%d', '2016-10-16', 'start of month')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "sqlite-identity-45",
+      "sourceIndex": 45,
+      "sql": "SELECT STRFTIME('%s')",
+      "upstreamExpected": "SELECT STRFTIME('%s', CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "sqlite-identity-57",
+      "sourceIndex": 57,
+      "sql": "CREATE TEMPORARY TABLE foo (id INTEGER)",
+      "upstreamExpected": null
+    }
+  ]
+}

@@ -1,0 +1,276 @@
+{
+  "dialect": "mysql",
+  "provenance": {
+    "source": "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/dialects/test_mysql.py",
+    "sqlglotTag": "v30.12.0",
+    "sqlglotCommit": "64e268a5d95cd84a87ad74ef569fc9bf356fd3fb",
+    "extractor": "tobilg/polyglot tools/sqlglot-extract/extract-tests.py at 7c4f1f20197377e220e479c78dc1a8b6e64ced0b",
+    "note": "Polyglot does not commit generated fixture blobs; these cases were regenerated from its pinned SQLGlot tag."
+  },
+  "selection": "Statically ported cases whose syntax is represented by Cyqwel; the test harness never filters or skips cases at runtime.",
+  "excludedCategories": [
+    "Administrative, procedural, trigger, grant, hint, and engine table-option syntax outside Cyqwel relational AST scope.",
+    "Advanced extension syntax not represented by Cyqwel, including JSON/path operators, arrays and ranges, table functions, PIVOT, MATCH_RECOGNIZE, and TABLESAMPLE.",
+    "Cases that assert SQLGlot warning, error, formatting, or identifier-normalization behavior rather than parse/generate stability."
+  ],
+  "cases": [
+    {
+      "name": "mysql-identity-4",
+      "sourceIndex": 4,
+      "sql": "CREATE TABLE foo (id BIGINT)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-6",
+      "sourceIndex": 6,
+      "sql": "CREATE TABLE temp (id SERIAL PRIMARY KEY)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-8",
+      "sourceIndex": 8,
+      "sql": "UPDATE /*+ MAX_EXECUTION_TIME(1) */ t SET a = 1",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-10",
+      "sourceIndex": 10,
+      "sql": "DELETE /*+ MAX_EXECUTION_TIME(1) */ FROM t WHERE a = 1",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-46",
+      "sourceIndex": 46,
+      "sql": "CREATE SQL SECURITY INVOKER VIEW id_test (id, foo) AS SELECT 0, foo FROM test",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-47",
+      "sourceIndex": 47,
+      "sql": "CREATE SQL SECURITY DEFINER VIEW id_test (id, foo) AS SELECT 0, foo FROM test",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-68",
+      "sourceIndex": 68,
+      "sql": "CREATE TABLE test (id INT, CONSTRAINT pk_name PRIMARY KEY (id))",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-69",
+      "sourceIndex": 69,
+      "sql": "CREATE TABLE test (a INT, b INT GENERATED ALWAYS AS (a + a) STORED)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-70",
+      "sourceIndex": 70,
+      "sql": "CREATE TABLE test (a INT, b INT GENERATED ALWAYS AS (a + a) VIRTUAL)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-74",
+      "sourceIndex": 74,
+      "sql": "CREATE TABLE t (name VARCHAR)",
+      "upstreamExpected": "CREATE TABLE t (name TEXT)"
+    },
+    {
+      "name": "mysql-identity-81",
+      "sourceIndex": 81,
+      "sql": "CREATE TABLE test (ts TIMESTAMP, ts_tz TIMESTAMPTZ, ts_ltz TIMESTAMPLTZ)",
+      "upstreamExpected": "CREATE TABLE test (ts TIMESTAMP, ts_tz TIMESTAMP, ts_ltz TIMESTAMP)"
+    },
+    {
+      "name": "mysql-identity-107",
+      "sourceIndex": 107,
+      "sql": "ALTER TABLE test_table ALTER COLUMN test_column SET DEFAULT 1",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-108",
+      "sourceIndex": 108,
+      "sql": "SELECT DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00.0000')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-114",
+      "sourceIndex": 114,
+      "sql": "SELECT /*+ BKA(t1) NO_BKA(t2) */ * FROM t1 INNER JOIN t2",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-115",
+      "sourceIndex": 115,
+      "sql": "SELECT /*+ MERGE(dt) */ * FROM (SELECT * FROM t1) AS dt",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-116",
+      "sourceIndex": 116,
+      "sql": "SELECT /*+ INDEX(t, i) */ c1 FROM t WHERE c2 = 'value'",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-122",
+      "sourceIndex": 122,
+      "sql": "SELECT CURRENT_TIMESTAMP(6)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-123",
+      "sourceIndex": 123,
+      "sql": "SELECT CURRENT_ROLE()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-124",
+      "sourceIndex": 124,
+      "sql": "SELECT CURTIME()",
+      "upstreamExpected": "SELECT CURRENT_TIME()"
+    },
+    {
+      "name": "mysql-identity-126",
+      "sourceIndex": 126,
+      "sql": "SELECT CAST(`a`.`b` AS CHAR) FROM foo",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-134",
+      "sourceIndex": 134,
+      "sql": "SELECT a || b",
+      "upstreamExpected": "SELECT a OR b"
+    },
+    {
+      "name": "mysql-identity-142",
+      "sourceIndex": 142,
+      "sql": "SELECT 1 AS row",
+      "upstreamExpected": "SELECT 1 AS `row`"
+    },
+    {
+      "name": "mysql-identity-198",
+      "sourceIndex": 198,
+      "sql": "SELECT ELT(2, 'foo', 'bar', 'baz') AS Result",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-200",
+      "sourceIndex": 200,
+      "sql": "SELECT VERSION()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-208",
+      "sourceIndex": 208,
+      "sql": "SELECT INSTR('str', 'substr')",
+      "upstreamExpected": "SELECT LOCATE('substr', 'str')"
+    },
+    {
+      "name": "mysql-identity-209",
+      "sourceIndex": 209,
+      "sql": "SELECT UCASE('foo')",
+      "upstreamExpected": "SELECT UPPER('foo')"
+    },
+    {
+      "name": "mysql-identity-210",
+      "sourceIndex": 210,
+      "sql": "SELECT LCASE('foo')",
+      "upstreamExpected": "SELECT LOWER('foo')"
+    },
+    {
+      "name": "mysql-identity-211",
+      "sourceIndex": 211,
+      "sql": "SELECT DAY_OF_MONTH('2023-01-01')",
+      "upstreamExpected": "SELECT DAYOFMONTH('2023-01-01')"
+    },
+    {
+      "name": "mysql-identity-212",
+      "sourceIndex": 212,
+      "sql": "SELECT DAY_OF_WEEK('2023-01-01')",
+      "upstreamExpected": "SELECT DAYOFWEEK('2023-01-01')"
+    },
+    {
+      "name": "mysql-identity-213",
+      "sourceIndex": 213,
+      "sql": "SELECT DAY_OF_YEAR('2023-01-01')",
+      "upstreamExpected": "SELECT DAYOFYEAR('2023-01-01')"
+    },
+    {
+      "name": "mysql-identity-214",
+      "sourceIndex": 214,
+      "sql": "SELECT WEEK_OF_YEAR('2023-01-01')",
+      "upstreamExpected": "SELECT WEEKOFYEAR('2023-01-01')"
+    },
+    {
+      "name": "mysql-identity-215",
+      "sourceIndex": 215,
+      "sql": "CREATE TABLE t (foo VARBINARY(5))",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-232",
+      "sourceIndex": 232,
+      "sql": "SELECT FROM_UNIXTIME(1711366265, '%Y %D %M')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "mysql-identity-233",
+      "sourceIndex": 233,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.123456+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.123456+00:00' AS DATETIME(6))"
+    },
+    {
+      "name": "mysql-identity-234",
+      "sourceIndex": 234,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.123+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.123+00:00' AS DATETIME(3))"
+    },
+    {
+      "name": "mysql-identity-235",
+      "sourceIndex": 235,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15+00:00' AS DATETIME)"
+    },
+    {
+      "name": "mysql-identity-236",
+      "sourceIndex": 236,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15-08:00', 'America/Los_Angeles')",
+      "upstreamExpected": "SELECT TIMESTAMP('2023-01-01 13:14:15-08:00')"
+    },
+    {
+      "name": "mysql-identity-237",
+      "sourceIndex": 237,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15-08:00', 'America/Los_Angeles')",
+      "upstreamExpected": "SELECT TIMESTAMP('2023-01-01 13:14:15-08:00')"
+    },
+    {
+      "name": "mysql-identity-238",
+      "sourceIndex": 238,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.12345+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.12345+00:00' AS DATETIME(6))"
+    },
+    {
+      "name": "mysql-identity-239",
+      "sourceIndex": 239,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.1234+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.1234+00:00' AS DATETIME(6))"
+    },
+    {
+      "name": "mysql-identity-240",
+      "sourceIndex": 240,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.12+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.12+00:00' AS DATETIME(3))"
+    },
+    {
+      "name": "mysql-identity-241",
+      "sourceIndex": 241,
+      "sql": "SELECT TIME_STR_TO_TIME('2023-01-01 13:14:15.1+00:00')",
+      "upstreamExpected": "SELECT CAST('2023-01-01 13:14:15.1+00:00' AS DATETIME(3))"
+    },
+    {
+      "name": "mysql-identity-265",
+      "sourceIndex": 265,
+      "sql": "SELECT JSON_OBJECT('id', 87, 'name', 'carrot')",
+      "upstreamExpected": null
+    }
+  ]
+}

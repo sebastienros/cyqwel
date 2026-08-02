@@ -45,6 +45,7 @@ public sealed partial class SqlGenerator
             case SelectStatement value: WriteSelect(value); break;
             case ValuesStatement value: WriteValues(value); break;
             case SetOperationStatement value: WriteSetOperation(value); break;
+            case ExplainStatement value: WriteExplain(value); break;
             case InsertStatement value: WriteInsert(value); break;
             case UpdateStatement value: WriteUpdate(value); break;
             case DeleteStatement value: WriteDelete(value); break;
@@ -74,6 +75,31 @@ public sealed partial class SqlGenerator
 
             WriteNode(document.Statements[i]);
         }
+    }
+
+    private void WriteExplain(ExplainStatement explain)
+    {
+        if (!_dialect.SupportsExplain)
+        {
+            Unsupported($"{_dialect.Name} cannot represent EXPLAIN.");
+            if (_options.UnsupportedBehavior == UnsupportedSqlBehavior.Ignore)
+            {
+                WriteNode(explain.Query);
+                return;
+            }
+        }
+
+        Keyword("EXPLAIN");
+        if (explain.Analyze)
+        {
+            Space();
+            Keyword("ANALYZE");
+        }
+
+        Space();
+        if (explain.IsQueryParenthesized) _builder.Append('(');
+        WriteNode(explain.Query);
+        if (explain.IsQueryParenthesized) _builder.Append(')');
     }
 
     private void WriteSelect(SelectStatement select)
@@ -971,10 +997,42 @@ public sealed partial class SqlGenerator
     private void WriteDataType(SqlDataType dataType)
     {
         _builder.Append(dataType.Name.Value);
-        if (dataType.Arguments is not { Count: > 0 }) return;
-        _builder.Append('(');
-        WriteSeparated(dataType.Arguments, value => _builder.Append(value.ToString(CultureInfo.InvariantCulture)));
-        _builder.Append(')');
+        if (dataType.Arguments is { Count: > 0 })
+        {
+            _builder.Append('(');
+            WriteSeparated(dataType.Arguments, value => _builder.Append(value.ToString(CultureInfo.InvariantCulture)));
+            if (dataType.LengthUnit != SqlDataTypeLengthUnit.Unspecified)
+            {
+                Space();
+                Keyword(dataType.LengthUnit == SqlDataTypeLengthUnit.Byte ? "BYTE" : "CHAR");
+            }
+
+            _builder.Append(')');
+        }
+
+        if (dataType.TimeZone != SqlDataTypeTimeZone.Unspecified)
+        {
+            Space();
+            Keyword(dataType.TimeZone == SqlDataTypeTimeZone.WithLocalTimeZone
+                ? "WITH LOCAL TIME ZONE"
+                : "WITH TIME ZONE");
+        }
+
+        if (dataType.IntervalEndField is not null)
+        {
+            Space();
+            Keyword("TO");
+            Space();
+            WriteIdentifier(dataType.IntervalEndField);
+            if (dataType.IntervalEndArguments is { Count: > 0 })
+            {
+                _builder.Append('(');
+                WriteSeparated(
+                    dataType.IntervalEndArguments,
+                    value => _builder.Append(value.ToString(CultureInfo.InvariantCulture)));
+                _builder.Append(')');
+            }
+        }
     }
 
     private void WriteIdentifier(SqlIdentifier identifier)

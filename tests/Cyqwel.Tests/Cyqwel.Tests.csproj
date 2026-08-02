@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\Cyqwel\Cyqwel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\Identity\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

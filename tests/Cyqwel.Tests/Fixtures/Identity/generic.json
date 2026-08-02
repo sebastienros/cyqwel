@@ -1,0 +1,1872 @@
+{
+  "dialect": "generic",
+  "provenance": {
+    "sources": [
+      "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/dialects/test_dialect.py",
+      "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/fixtures/identity.sql"
+    ],
+    "sqlglotTag": "v30.12.0",
+    "sqlglotCommit": "64e268a5d95cd84a87ad74ef569fc9bf356fd3fb",
+    "extractor": "tobilg/polyglot tools/sqlglot-extract/extract-tests.py at 7c4f1f20197377e220e479c78dc1a8b6e64ced0b",
+    "note": "Polyglot does not commit generated fixture blobs; these cases were regenerated from its pinned SQLGlot tag."
+  },
+  "selection": "Statically ported generic dialect and identity.sql cases whose syntax is represented by Cyqwel; the test harness never filters or skips cases at runtime.",
+  "excludedCategories": [
+    "Administrative, procedural, trigger, grant, hint, and engine table-option syntax outside Cyqwel relational AST scope.",
+    "Advanced extension syntax not represented by Cyqwel, including JSON/path operators, arrays and ranges, table functions, PIVOT, MATCH_RECOGNIZE, and TABLESAMPLE.",
+    "Cases that assert SQLGlot warning, error, formatting, or identifier-normalization behavior rather than parse/generate stability.",
+    "Bit-shift operators remain excluded consistently with Polyglot identity_roundtrip.rs, where they are marked not fully implemented."
+  ],
+  "cases": [
+    {
+      "name": "generic-dialect-identity-1",
+      "sourceIndex": 1,
+      "sql": "SELECT ARRAY_INTERSECT(x, y, z)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "generic-dialect-identity-11",
+      "sourceIndex": 11,
+      "sql": "TRUNCATE TABLE db.schema.test",
+      "upstreamExpected": null
+    },
+    {
+      "name": "generic-dialect-identity-13",
+      "sourceIndex": 13,
+      "sql": "TRUNCATE TABLE t1, t2, t3",
+      "upstreamExpected": null
+    },
+    {
+      "name": "generic-dialect-identity-14",
+      "sourceIndex": 14,
+      "sql": "CREATE SEQUENCE seq",
+      "upstreamExpected": null
+    },
+    {
+      "name": "generic-dialect-identity-29",
+      "sourceIndex": 29,
+      "sql": "SELECT operator FROM t",
+      "upstreamExpected": null
+    },
+    {
+      "name": "generic-identity-line-79",
+      "sourceLine": 79,
+      "sql": "SELECT call.x"
+    },
+    {
+      "name": "generic-identity-line-154",
+      "sourceLine": 154,
+      "sql": "SELECT asof FROM x"
+    },
+    {
+      "name": "generic-identity-line-214",
+      "sourceLine": 214,
+      "sql": "SELECT * FROM test"
+    },
+    {
+      "name": "generic-identity-line-216",
+      "sourceLine": 216,
+      "sql": "SELECT *, 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-217",
+      "sourceLine": 217,
+      "sql": "SELECT * FROM a.b"
+    },
+    {
+      "name": "generic-identity-line-218",
+      "sourceLine": 218,
+      "sql": "SELECT * FROM a.b.c"
+    },
+    {
+      "name": "generic-identity-line-220",
+      "sourceLine": 220,
+      "sql": "SELECT 1"
+    },
+    {
+      "name": "generic-identity-line-221",
+      "sourceLine": 221,
+      "sql": "SELECT 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-222",
+      "sourceLine": 222,
+      "sql": "SELECT * FROM a, b, (SELECT 1) AS c"
+    },
+    {
+      "name": "generic-identity-line-223",
+      "sourceLine": 223,
+      "sql": "SELECT a FROM test"
+    },
+    {
+      "name": "generic-identity-line-225",
+      "sourceLine": 225,
+      "sql": "SELECT 1 AS \"quoted alias\""
+    },
+    {
+      "name": "generic-identity-line-228",
+      "sourceLine": 228,
+      "sql": "SELECT 1 AS count FROM test"
+    },
+    {
+      "name": "generic-identity-line-229",
+      "sourceLine": 229,
+      "sql": "SELECT 1 AS comment FROM test"
+    },
+    {
+      "name": "generic-identity-line-230",
+      "sourceLine": 230,
+      "sql": "SELECT 1 AS numeric FROM test"
+    },
+    {
+      "name": "generic-identity-line-231",
+      "sourceLine": 231,
+      "sql": "SELECT 1 AS number FROM test"
+    },
+    {
+      "name": "generic-identity-line-233",
+      "sourceLine": 233,
+      "sql": "SELECT t.count"
+    },
+    {
+      "name": "generic-identity-line-234",
+      "sourceLine": 234,
+      "sql": "SELECT DISTINCT x FROM test"
+    },
+    {
+      "name": "generic-identity-line-235",
+      "sourceLine": 235,
+      "sql": "SELECT DISTINCT x, y FROM test"
+    },
+    {
+      "name": "generic-identity-line-236",
+      "sourceLine": 236,
+      "sql": "SELECT DISTINCT TIMESTAMP_TRUNC(time_field, MONTH) AS time_value FROM \"table\""
+    },
+    {
+      "name": "generic-identity-line-240",
+      "sourceLine": 240,
+      "sql": "SELECT DISTINCT FROM_SOMETHING"
+    },
+    {
+      "name": "generic-identity-line-242",
+      "sourceLine": 242,
+      "sql": "SELECT TIMESTAMP(DATE_TRUNC('MONTH', DATE(time_field))) AS time_value FROM \"table\""
+    },
+    {
+      "name": "generic-identity-line-243",
+      "sourceLine": 243,
+      "sql": "SELECT GREATEST((3 + 1), LEAST(3, 4))"
+    },
+    {
+      "name": "generic-identity-line-246",
+      "sourceLine": 246,
+      "sql": "SELECT COUNT(DISTINCT a, b)"
+    },
+    {
+      "name": "generic-identity-line-247",
+      "sourceLine": 247,
+      "sql": "SELECT COUNT(DISTINCT a, b + 1)"
+    },
+    {
+      "name": "generic-identity-line-248",
+      "sourceLine": 248,
+      "sql": "SELECT SUM(DISTINCT x)"
+    },
+    {
+      "name": "generic-identity-line-249",
+      "sourceLine": 249,
+      "sql": "SELECT TRUNC(a, b)"
+    },
+    {
+      "name": "generic-identity-line-251",
+      "sourceLine": 251,
+      "sql": "SELECT LAG(x) OVER (ORDER BY y) AS x"
+    },
+    {
+      "name": "generic-identity-line-252",
+      "sourceLine": 252,
+      "sql": "SELECT LEAD(a) OVER (ORDER BY b) AS a"
+    },
+    {
+      "name": "generic-identity-line-253",
+      "sourceLine": 253,
+      "sql": "SELECT LEAD(a, 1) OVER (PARTITION BY a ORDER BY a) AS x"
+    },
+    {
+      "name": "generic-identity-line-254",
+      "sourceLine": 254,
+      "sql": "SELECT LEAD(a, 1, b) OVER (PARTITION BY a ORDER BY a) AS x"
+    },
+    {
+      "name": "generic-identity-line-257",
+      "sourceLine": 257,
+      "sql": "SELECT test.* FROM test"
+    },
+    {
+      "name": "generic-identity-line-258",
+      "sourceLine": 258,
+      "sql": "SELECT a AS b FROM test"
+    },
+    {
+      "name": "generic-identity-line-259",
+      "sourceLine": 259,
+      "sql": "SELECT \"a\".\"b\" FROM \"a\""
+    },
+    {
+      "name": "generic-identity-line-260",
+      "sourceLine": 260,
+      "sql": "SELECT \"a\".b FROM a"
+    },
+    {
+      "name": "generic-identity-line-261",
+      "sourceLine": 261,
+      "sql": "SELECT a.b FROM \"a\""
+    },
+    {
+      "name": "generic-identity-line-262",
+      "sourceLine": 262,
+      "sql": "SELECT a.b FROM a"
+    },
+    {
+      "name": "generic-identity-line-263",
+      "sourceLine": 263,
+      "sql": "SELECT '\"hi' AS x FROM x"
+    },
+    {
+      "name": "generic-identity-line-264",
+      "sourceLine": 264,
+      "sql": "SELECT 1 AS \"|sum\" FROM x"
+    },
+    {
+      "name": "generic-identity-line-265",
+      "sourceLine": 265,
+      "sql": "SELECT '\\\"hi' AS x FROM x"
+    },
+    {
+      "name": "generic-identity-line-266",
+      "sourceLine": 266,
+      "sql": "SELECT 1 AS b FROM test"
+    },
+    {
+      "name": "generic-identity-line-267",
+      "sourceLine": 267,
+      "sql": "SELECT 1 AS \"b\" FROM test"
+    },
+    {
+      "name": "generic-identity-line-268",
+      "sourceLine": 268,
+      "sql": "SELECT 1 + 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-269",
+      "sourceLine": 269,
+      "sql": "SELECT 1 - 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-270",
+      "sourceLine": 270,
+      "sql": "SELECT 1 * 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-271",
+      "sourceLine": 271,
+      "sql": "SELECT 1 % 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-272",
+      "sourceLine": 272,
+      "sql": "SELECT 1 / 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-273",
+      "sourceLine": 273,
+      "sql": "SELECT 1 < 2 FROM test"
+    },
+    {
+      "name": "generic-identity-line-274",
+      "sourceLine": 274,
+      "sql": "SELECT 1 <= 2 FROM test"
+    },
+    {
+      "name": "generic-identity-line-275",
+      "sourceLine": 275,
+      "sql": "SELECT 1 > 2 FROM test"
+    },
+    {
+      "name": "generic-identity-line-276",
+      "sourceLine": 276,
+      "sql": "SELECT 1 >= 2 FROM test"
+    },
+    {
+      "name": "generic-identity-line-277",
+      "sourceLine": 277,
+      "sql": "SELECT 1 <> 2 FROM test"
+    },
+    {
+      "name": "generic-identity-line-278",
+      "sourceLine": 278,
+      "sql": "SELECT JSON_EXTRACT(x, '$.name')"
+    },
+    {
+      "name": "generic-identity-line-279",
+      "sourceLine": 279,
+      "sql": "SELECT JSON_EXTRACT_SCALAR(x, '$.name')"
+    },
+    {
+      "name": "generic-identity-line-280",
+      "sourceLine": 280,
+      "sql": "SELECT x LIKE '%x%' FROM test"
+    },
+    {
+      "name": "generic-identity-line-281",
+      "sourceLine": 281,
+      "sql": "SELECT * FROM test LIMIT 100"
+    },
+    {
+      "name": "generic-identity-line-282",
+      "sourceLine": 282,
+      "sql": "SELECT * FROM test LIMIT 1 + 1"
+    },
+    {
+      "name": "generic-identity-line-283",
+      "sourceLine": 283,
+      "sql": "SELECT * FROM test LIMIT 100 OFFSET 200"
+    },
+    {
+      "name": "generic-identity-line-284",
+      "sourceLine": 284,
+      "sql": "SELECT * FROM test LIMIT (SELECT 1)"
+    },
+    {
+      "name": "generic-identity-line-285",
+      "sourceLine": 285,
+      "sql": "SELECT * FROM test LIMIT (SELECT 1) OFFSET (SELECT 1)"
+    },
+    {
+      "name": "generic-identity-line-287",
+      "sourceLine": 287,
+      "sql": "SELECT * FROM test FETCH FIRST 1 ROWS ONLY"
+    },
+    {
+      "name": "generic-identity-line-291",
+      "sourceLine": 291,
+      "sql": "SELECT * FROM test FETCH NEXT 1 ROWS ONLY"
+    },
+    {
+      "name": "generic-identity-line-292",
+      "sourceLine": 292,
+      "sql": "SELECT (1 > 2) AS x FROM test"
+    },
+    {
+      "name": "generic-identity-line-293",
+      "sourceLine": 293,
+      "sql": "SELECT NOT (1 > 2) FROM test"
+    },
+    {
+      "name": "generic-identity-line-294",
+      "sourceLine": 294,
+      "sql": "SELECT 1 + 2 AS x FROM test"
+    },
+    {
+      "name": "generic-identity-line-295",
+      "sourceLine": 295,
+      "sql": "SELECT a, b, 1 < 1 FROM test"
+    },
+    {
+      "name": "generic-identity-line-296",
+      "sourceLine": 296,
+      "sql": "SELECT a FROM test WHERE NOT FALSE"
+    },
+    {
+      "name": "generic-identity-line-297",
+      "sourceLine": 297,
+      "sql": "SELECT a FROM test WHERE a = 1"
+    },
+    {
+      "name": "generic-identity-line-298",
+      "sourceLine": 298,
+      "sql": "SELECT a FROM test WHERE a = 1 AND b = 2"
+    },
+    {
+      "name": "generic-identity-line-299",
+      "sourceLine": 299,
+      "sql": "SELECT a FROM test WHERE a IN (SELECT b FROM z)"
+    },
+    {
+      "name": "generic-identity-line-300",
+      "sourceLine": 300,
+      "sql": "SELECT a FROM test WHERE a IN ((SELECT 1), 2)"
+    },
+    {
+      "name": "generic-identity-line-302",
+      "sourceLine": 302,
+      "sql": "SELECT * FROM x WHERE y IN (SELECT 1 UNION SELECT 2)"
+    },
+    {
+      "name": "generic-identity-line-303",
+      "sourceLine": 303,
+      "sql": "SELECT * FROM x WHERE y IN ((SELECT 1 UNION SELECT 2))"
+    },
+    {
+      "name": "generic-identity-line-304",
+      "sourceLine": 304,
+      "sql": "SELECT * FROM x WHERE y IN (WITH z AS (SELECT 1) SELECT * FROM z)"
+    },
+    {
+      "name": "generic-identity-line-305",
+      "sourceLine": 305,
+      "sql": "SELECT a FROM test WHERE (a > 1)"
+    },
+    {
+      "name": "generic-identity-line-306",
+      "sourceLine": 306,
+      "sql": "SELECT a FROM test WHERE a > (SELECT 1 FROM x GROUP BY y)"
+    },
+    {
+      "name": "generic-identity-line-307",
+      "sourceLine": 307,
+      "sql": "SELECT a FROM test WHERE EXISTS(SELECT 1)"
+    },
+    {
+      "name": "generic-identity-line-308",
+      "sourceLine": 308,
+      "sql": "SELECT a FROM test WHERE EXISTS(SELECT * FROM x UNION SELECT * FROM Y) OR TRUE"
+    },
+    {
+      "name": "generic-identity-line-309",
+      "sourceLine": 309,
+      "sql": "SELECT a FROM test WHERE TRUE OR NOT EXISTS(SELECT * FROM x)"
+    },
+    {
+      "name": "generic-identity-line-314",
+      "sourceLine": 314,
+      "sql": "SELECT a FROM test ORDER BY a"
+    },
+    {
+      "name": "generic-identity-line-315",
+      "sourceLine": 315,
+      "sql": "SELECT a FROM test ORDER BY a, b"
+    },
+    {
+      "name": "generic-identity-line-316",
+      "sourceLine": 316,
+      "sql": "SELECT x FROM tests ORDER BY a DESC, b DESC, c"
+    },
+    {
+      "name": "generic-identity-line-317",
+      "sourceLine": 317,
+      "sql": "SELECT a FROM test ORDER BY a > 1"
+    },
+    {
+      "name": "generic-identity-line-318",
+      "sourceLine": 318,
+      "sql": "SELECT * FROM test ORDER BY DATE DESC, TIMESTAMP DESC"
+    },
+    {
+      "name": "generic-identity-line-319",
+      "sourceLine": 319,
+      "sql": "SELECT a, b FROM test GROUP BY 1"
+    },
+    {
+      "name": "generic-identity-line-320",
+      "sourceLine": 320,
+      "sql": "SELECT a, b FROM test GROUP BY a"
+    },
+    {
+      "name": "generic-identity-line-321",
+      "sourceLine": 321,
+      "sql": "SELECT a, b FROM test WHERE a = 1 GROUP BY a HAVING a = 2"
+    },
+    {
+      "name": "generic-identity-line-322",
+      "sourceLine": 322,
+      "sql": "SELECT a, b FROM test WHERE a = 1 GROUP BY a HAVING a = 2 ORDER BY a"
+    },
+    {
+      "name": "generic-identity-line-327",
+      "sourceLine": 327,
+      "sql": "SELECT a FROM test GROUP BY CUBE (x)"
+    },
+    {
+      "name": "generic-identity-line-328",
+      "sourceLine": 328,
+      "sql": "SELECT a FROM test GROUP BY ROLLUP (x)"
+    },
+    {
+      "name": "generic-identity-line-329",
+      "sourceLine": 329,
+      "sql": "SELECT t.a FROM test AS t GROUP BY ROLLUP (t.x)"
+    },
+    {
+      "name": "generic-identity-line-331",
+      "sourceLine": 331,
+      "sql": "SELECT a FROM test GROUP BY CUBE (x), ROLLUP (x, y, z)"
+    },
+    {
+      "name": "generic-identity-line-332",
+      "sourceLine": 332,
+      "sql": "SELECT CASE WHEN a < b THEN 1 WHEN a < c THEN 2 ELSE 3 END FROM test"
+    },
+    {
+      "name": "generic-identity-line-340",
+      "sourceLine": 340,
+      "sql": "SELECT a FROM (SELECT a FROM test) AS x"
+    },
+    {
+      "name": "generic-identity-line-341",
+      "sourceLine": 341,
+      "sql": "SELECT a FROM (SELECT a FROM (SELECT a FROM test) AS y) AS x"
+    },
+    {
+      "name": "generic-identity-line-342",
+      "sourceLine": 342,
+      "sql": "SELECT a FROM test WHERE a IN (1, 2, 3) OR b BETWEEN 1 AND 4"
+    },
+    {
+      "name": "generic-identity-line-356",
+      "sourceLine": 356,
+      "sql": "SELECT ABS(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-357",
+      "sourceLine": 357,
+      "sql": "SELECT AVG(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-358",
+      "sourceLine": 358,
+      "sql": "SELECT CEIL(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-359",
+      "sourceLine": 359,
+      "sql": "SELECT CEIL(a, b) FROM test"
+    },
+    {
+      "name": "generic-identity-line-360",
+      "sourceLine": 360,
+      "sql": "SELECT COUNT(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-361",
+      "sourceLine": 361,
+      "sql": "SELECT COUNT(1) FROM test"
+    },
+    {
+      "name": "generic-identity-line-362",
+      "sourceLine": 362,
+      "sql": "SELECT COUNT(*) FROM test"
+    },
+    {
+      "name": "generic-identity-line-363",
+      "sourceLine": 363,
+      "sql": "SELECT COUNT() FROM test"
+    },
+    {
+      "name": "generic-identity-line-364",
+      "sourceLine": 364,
+      "sql": "SELECT COUNT(DISTINCT a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-365",
+      "sourceLine": 365,
+      "sql": "SELECT EXP(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-366",
+      "sourceLine": 366,
+      "sql": "SELECT FLOOR(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-367",
+      "sourceLine": 367,
+      "sql": "SELECT FLOOR(a, b) FROM test"
+    },
+    {
+      "name": "generic-identity-line-368",
+      "sourceLine": 368,
+      "sql": "SELECT FIRST_VALUE(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-369",
+      "sourceLine": 369,
+      "sql": "SELECT GREATEST(a, b, c) FROM test"
+    },
+    {
+      "name": "generic-identity-line-370",
+      "sourceLine": 370,
+      "sql": "SELECT LAST_VALUE(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-372",
+      "sourceLine": 372,
+      "sql": "SELECT LN(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-373",
+      "sourceLine": 373,
+      "sql": "SELECT MAX(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-374",
+      "sourceLine": 374,
+      "sql": "SELECT MIN(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-375",
+      "sourceLine": 375,
+      "sql": "SELECT POWER(a, 2) FROM test"
+    },
+    {
+      "name": "generic-identity-line-376",
+      "sourceLine": 376,
+      "sql": "SELECT QUANTILE(a, 0.95) FROM test"
+    },
+    {
+      "name": "generic-identity-line-377",
+      "sourceLine": 377,
+      "sql": "SELECT ROUND(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-378",
+      "sourceLine": 378,
+      "sql": "SELECT ROUND(a, 2) FROM test"
+    },
+    {
+      "name": "generic-identity-line-379",
+      "sourceLine": 379,
+      "sql": "SELECT SUM(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-380",
+      "sourceLine": 380,
+      "sql": "SELECT SQRT(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-381",
+      "sourceLine": 381,
+      "sql": "SELECT STDDEV(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-382",
+      "sourceLine": 382,
+      "sql": "SELECT STDDEV_POP(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-383",
+      "sourceLine": 383,
+      "sql": "SELECT STDDEV_SAMP(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-384",
+      "sourceLine": 384,
+      "sql": "SELECT VARIANCE(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-385",
+      "sourceLine": 385,
+      "sql": "SELECT VARIANCE_POP(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-386",
+      "sourceLine": 386,
+      "sql": "SELECT CAST(a AS INT) FROM test"
+    },
+    {
+      "name": "generic-identity-line-387",
+      "sourceLine": 387,
+      "sql": "SELECT CAST(a AS DATETIME) FROM test"
+    },
+    {
+      "name": "generic-identity-line-388",
+      "sourceLine": 388,
+      "sql": "SELECT CAST(a AS VARCHAR) FROM test"
+    },
+    {
+      "name": "generic-identity-line-389",
+      "sourceLine": 389,
+      "sql": "SELECT CAST(a < 1 AS INT) FROM test"
+    },
+    {
+      "name": "generic-identity-line-390",
+      "sourceLine": 390,
+      "sql": "SELECT CAST(a IS NULL AS INT) FROM test"
+    },
+    {
+      "name": "generic-identity-line-391",
+      "sourceLine": 391,
+      "sql": "SELECT COUNT(CAST(1 < 2 AS INT)) FROM test"
+    },
+    {
+      "name": "generic-identity-line-392",
+      "sourceLine": 392,
+      "sql": "SELECT COUNT(CASE WHEN CAST(1 < 2 AS BOOLEAN) THEN 1 END) FROM test"
+    },
+    {
+      "name": "generic-identity-line-393",
+      "sourceLine": 393,
+      "sql": "SELECT CAST(a AS DECIMAL) FROM test"
+    },
+    {
+      "name": "generic-identity-line-394",
+      "sourceLine": 394,
+      "sql": "SELECT CAST(a AS DECIMAL(1)) FROM test"
+    },
+    {
+      "name": "generic-identity-line-395",
+      "sourceLine": 395,
+      "sql": "SELECT CAST(a AS DECIMAL(1, 2)) FROM test"
+    },
+    {
+      "name": "generic-identity-line-397",
+      "sourceLine": 397,
+      "sql": "SELECT CAST(a AS TIMESTAMP) FROM test"
+    },
+    {
+      "name": "generic-identity-line-398",
+      "sourceLine": 398,
+      "sql": "SELECT CAST(a AS DATE) FROM test"
+    },
+    {
+      "name": "generic-identity-line-400",
+      "sourceLine": 400,
+      "sql": "SELECT CAST(a AS VARIANT) FROM test"
+    },
+    {
+      "name": "generic-identity-line-401",
+      "sourceLine": 401,
+      "sql": "SELECT TRY_CAST(a AS INT) FROM test"
+    },
+    {
+      "name": "generic-identity-line-402",
+      "sourceLine": 402,
+      "sql": "SELECT COALESCE(a, b, c) FROM test"
+    },
+    {
+      "name": "generic-identity-line-403",
+      "sourceLine": 403,
+      "sql": "SELECT ANY_VALUE(a) FROM test"
+    },
+    {
+      "name": "generic-identity-line-404",
+      "sourceLine": 404,
+      "sql": "SELECT 1 FROM a JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-405",
+      "sourceLine": 405,
+      "sql": "SELECT 1 FROM a JOIN b AS c ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-406",
+      "sourceLine": 406,
+      "sql": "SELECT 1 FROM a INNER JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-407",
+      "sourceLine": 407,
+      "sql": "SELECT 1 FROM a LEFT JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-408",
+      "sourceLine": 408,
+      "sql": "SELECT 1 FROM a RIGHT JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-409",
+      "sourceLine": 409,
+      "sql": "SELECT 1 FROM a CROSS JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-410",
+      "sourceLine": 410,
+      "sql": "SELECT 1 FROM a SEMI JOIN b ON a.x = b.x"
+    },
+    {
+      "name": "generic-identity-line-415",
+      "sourceLine": 415,
+      "sql": "SELECT 1 FROM a JOIN b USING (x)"
+    },
+    {
+      "name": "generic-identity-line-416",
+      "sourceLine": 416,
+      "sql": "SELECT 1 FROM a JOIN b USING (x, y, z)"
+    },
+    {
+      "name": "generic-identity-line-417",
+      "sourceLine": 417,
+      "sql": "SELECT 1 FROM a JOIN (SELECT a FROM c) AS b ON a.x = b.x AND a.x < 2"
+    },
+    {
+      "name": "generic-identity-line-418",
+      "sourceLine": 418,
+      "sql": "SELECT 1 FROM a UNION SELECT 2 FROM b"
+    },
+    {
+      "name": "generic-identity-line-419",
+      "sourceLine": 419,
+      "sql": "SELECT 1 FROM a UNION ALL SELECT 2 FROM b"
+    },
+    {
+      "name": "generic-identity-line-420",
+      "sourceLine": 420,
+      "sql": "SELECT 1 FROM a JOIN b ON a.foo = b.bar JOIN c ON a.foo = c.bar"
+    },
+    {
+      "name": "generic-identity-line-421",
+      "sourceLine": 421,
+      "sql": "SELECT 1 FROM a LEFT JOIN b ON a.foo = b.bar JOIN c ON a.foo = c.bar"
+    },
+    {
+      "name": "generic-identity-line-423",
+      "sourceLine": 423,
+      "sql": "SELECT 1 FROM a LEFT OUTER JOIN b ON a.foo = b.bar"
+    },
+    {
+      "name": "generic-identity-line-424",
+      "sourceLine": 424,
+      "sql": "SELECT 1 FROM a NATURAL JOIN b"
+    },
+    {
+      "name": "generic-identity-line-425",
+      "sourceLine": 425,
+      "sql": "SELECT 1 FROM a NATURAL LEFT JOIN b"
+    },
+    {
+      "name": "generic-identity-line-426",
+      "sourceLine": 426,
+      "sql": "SELECT 1 FROM a NATURAL LEFT OUTER JOIN b"
+    },
+    {
+      "name": "generic-identity-line-428",
+      "sourceLine": 428,
+      "sql": "SELECT 1 FROM a FULL JOIN b ON a.foo = b.bar"
+    },
+    {
+      "name": "generic-identity-line-431",
+      "sourceLine": 431,
+      "sql": "SELECT 1 UNION ALL SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-432",
+      "sourceLine": 432,
+      "sql": "SELECT 1 EXCEPT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-433",
+      "sourceLine": 433,
+      "sql": "SELECT 1 EXCEPT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-434",
+      "sourceLine": 434,
+      "sql": "SELECT 1 INTERSECT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-435",
+      "sourceLine": 435,
+      "sql": "SELECT 1 INTERSECT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-442",
+      "sourceLine": 442,
+      "sql": "SELECT * FROM (SELECT 1) AS x"
+    },
+    {
+      "name": "generic-identity-line-443",
+      "sourceLine": 443,
+      "sql": "SELECT * FROM (SELECT 1 UNION SELECT 2) AS x"
+    },
+    {
+      "name": "generic-identity-line-444",
+      "sourceLine": 444,
+      "sql": "SELECT * FROM (SELECT 1 UNION ALL SELECT 2) AS x"
+    },
+    {
+      "name": "generic-identity-line-469",
+      "sourceLine": 469,
+      "sql": "WITH a AS (SELECT 1) SELECT 1 UNION ALL SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-470",
+      "sourceLine": 470,
+      "sql": "WITH a AS (SELECT 1) SELECT 1 UNION SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-471",
+      "sourceLine": 471,
+      "sql": "WITH a AS (SELECT 1) SELECT 1 INTERSECT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-472",
+      "sourceLine": 472,
+      "sql": "WITH a AS (SELECT 1) SELECT 1 EXCEPT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-473",
+      "sourceLine": 473,
+      "sql": "WITH a AS (SELECT 1) SELECT 1 EXCEPT SELECT 2"
+    },
+    {
+      "name": "generic-identity-line-486",
+      "sourceLine": 486,
+      "sql": "VALUES (1) UNION SELECT * FROM x"
+    },
+    {
+      "name": "generic-identity-line-487",
+      "sourceLine": 487,
+      "sql": "WITH a AS (SELECT 1) SELECT a.* FROM a"
+    },
+    {
+      "name": "generic-identity-line-488",
+      "sourceLine": 488,
+      "sql": "WITH a AS (SELECT 1), b AS (SELECT 2) SELECT a.*, b.* FROM a CROSS JOIN b"
+    },
+    {
+      "name": "generic-identity-line-489",
+      "sourceLine": 489,
+      "sql": "WITH a AS (WITH b AS (SELECT 1 AS x) SELECT b.x FROM b) SELECT a.x FROM a"
+    },
+    {
+      "name": "generic-identity-line-490",
+      "sourceLine": 490,
+      "sql": "WITH RECURSIVE T(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 100) SELECT SUM(n) FROM t"
+    },
+    {
+      "name": "generic-identity-line-491",
+      "sourceLine": 491,
+      "sql": "WITH RECURSIVE T(n, m) AS (VALUES (1, 2) UNION ALL SELECT n + 1, n + 2 FROM t) SELECT SUM(n) FROM t"
+    },
+    {
+      "name": "generic-identity-line-493",
+      "sourceLine": 493,
+      "sql": "SELECT * FROM (WITH y AS (SELECT 1 AS z) SELECT z FROM y) AS x"
+    },
+    {
+      "name": "generic-identity-line-494",
+      "sourceLine": 494,
+      "sql": "SELECT RANK() OVER () FROM x"
+    },
+    {
+      "name": "generic-identity-line-495",
+      "sourceLine": 495,
+      "sql": "SELECT RANK() OVER () AS y FROM x"
+    },
+    {
+      "name": "generic-identity-line-496",
+      "sourceLine": 496,
+      "sql": "SELECT RANK() OVER (PARTITION BY a) FROM x"
+    },
+    {
+      "name": "generic-identity-line-497",
+      "sourceLine": 497,
+      "sql": "SELECT RANK() OVER (PARTITION BY a, b) FROM x"
+    },
+    {
+      "name": "generic-identity-line-498",
+      "sourceLine": 498,
+      "sql": "SELECT RANK() OVER (ORDER BY a) FROM x"
+    },
+    {
+      "name": "generic-identity-line-499",
+      "sourceLine": 499,
+      "sql": "SELECT RANK() OVER (ORDER BY a, b) FROM x"
+    },
+    {
+      "name": "generic-identity-line-500",
+      "sourceLine": 500,
+      "sql": "SELECT RANK() OVER (PARTITION BY a ORDER BY a) FROM x"
+    },
+    {
+      "name": "generic-identity-line-501",
+      "sourceLine": 501,
+      "sql": "SELECT RANK() OVER (PARTITION BY a, b ORDER BY a, b DESC) FROM x"
+    },
+    {
+      "name": "generic-identity-line-502",
+      "sourceLine": 502,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a) AS y FROM x"
+    },
+    {
+      "name": "generic-identity-line-503",
+      "sourceLine": 503,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "generic-identity-line-504",
+      "sourceLine": 504,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY b ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "generic-identity-line-505",
+      "sourceLine": 505,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY b ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "generic-identity-line-506",
+      "sourceLine": 506,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN INTERVAL '1' DAY PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "generic-identity-line-507",
+      "sourceLine": 507,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN INTERVAL '1' DAY PRECEDING AND INTERVAL '2' DAYS FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-508",
+      "sourceLine": 508,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN INTERVAL '1' DAY PRECEDING AND UNBOUNDED FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-510",
+      "sourceLine": 510,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-511",
+      "sourceLine": 511,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-512",
+      "sourceLine": 512,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "generic-identity-line-515",
+      "sourceLine": 515,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a RANGE BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-516",
+      "sourceLine": 516,
+      "sql": "SELECT AVG(x) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM t"
+    },
+    {
+      "name": "generic-identity-line-517",
+      "sourceLine": 517,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-518",
+      "sourceLine": 518,
+      "sql": "SELECT LISTAGG(x) WITHIN GROUP (ORDER BY x) AS y"
+    },
+    {
+      "name": "generic-identity-line-519",
+      "sourceLine": 519,
+      "sql": "SELECT LISTAGG(x) WITHIN GROUP (ORDER BY x DESC)"
+    },
+    {
+      "name": "generic-identity-line-520",
+      "sourceLine": 520,
+      "sql": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)"
+    },
+    {
+      "name": "generic-identity-line-521",
+      "sourceLine": 521,
+      "sql": "SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)"
+    },
+    {
+      "name": "generic-identity-line-522",
+      "sourceLine": 522,
+      "sql": "SELECT SUM(x) FILTER(WHERE x > 1)"
+    },
+    {
+      "name": "generic-identity-line-523",
+      "sourceLine": 523,
+      "sql": "SELECT SUM(x) FILTER(WHERE x > 1) OVER (ORDER BY y)"
+    },
+    {
+      "name": "generic-identity-line-524",
+      "sourceLine": 524,
+      "sql": "SELECT COUNT(DISTINCT a) OVER (PARTITION BY c ORDER BY d ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)"
+    },
+    {
+      "name": "generic-identity-line-525",
+      "sourceLine": 525,
+      "sql": "SELECT a['1'], b[0], x.c[0], \"x\".d['1'] FROM x"
+    },
+    {
+      "name": "generic-identity-line-526",
+      "sourceLine": 526,
+      "sql": "SELECT ARRAY(1, 2, 3) FROM x"
+    },
+    {
+      "name": "generic-identity-line-527",
+      "sourceLine": 527,
+      "sql": "SELECT ARRAY(ARRAY(1), ARRAY(2)) FROM x"
+    },
+    {
+      "name": "generic-identity-line-528",
+      "sourceLine": 528,
+      "sql": "SELECT MAP[ARRAY(1), ARRAY(2)] FROM x"
+    },
+    {
+      "name": "generic-identity-line-529",
+      "sourceLine": 529,
+      "sql": "SELECT MAP(ARRAY(1), ARRAY(2)) FROM x"
+    },
+    {
+      "name": "generic-identity-line-530",
+      "sourceLine": 530,
+      "sql": "SELECT MAX(ARRAY(1, 2, 3)) FROM x"
+    },
+    {
+      "name": "generic-identity-line-547",
+      "sourceLine": 547,
+      "sql": "CREATE TABLE a.b AS SELECT 1"
+    },
+    {
+      "name": "generic-identity-line-553",
+      "sourceLine": 553,
+      "sql": "CREATE TABLE a.b AS SELECT a FROM a.c"
+    },
+    {
+      "name": "generic-identity-line-554",
+      "sourceLine": 554,
+      "sql": "CREATE TABLE IF NOT EXISTS x AS SELECT a FROM d"
+    },
+    {
+      "name": "generic-identity-line-555",
+      "sourceLine": 555,
+      "sql": "CREATE TABLE z (a INT, b VARCHAR, c VARCHAR(100), d DECIMAL(5, 3))"
+    },
+    {
+      "name": "generic-identity-line-557",
+      "sourceLine": 557,
+      "sql": "CREATE TABLE z (bucket INT)"
+    },
+    {
+      "name": "generic-identity-line-561",
+      "sourceLine": 561,
+      "sql": "CREATE TABLE z (a INT(11) DEFAULT UUID())"
+    },
+    {
+      "name": "generic-identity-line-562",
+      "sourceLine": 562,
+      "sql": "CREATE TABLE z (n INT DEFAULT 0 NOT NULL)"
+    },
+    {
+      "name": "generic-identity-line-564",
+      "sourceLine": 564,
+      "sql": "CREATE TABLE z (a INT(11) NOT NULL DEFAULT 1)"
+    },
+    {
+      "name": "generic-identity-line-565",
+      "sourceLine": 565,
+      "sql": "CREATE TABLE z (a INT(11) NOT NULL DEFAULT -1)"
+    },
+    {
+      "name": "generic-identity-line-567",
+      "sourceLine": 567,
+      "sql": "CREATE TABLE z (a INT, PRIMARY KEY (a))"
+    },
+    {
+      "name": "generic-identity-line-576",
+      "sourceLine": 576,
+      "sql": "CREATE TABLE z (a INT UNIQUE)"
+    },
+    {
+      "name": "generic-identity-line-581",
+      "sourceLine": 581,
+      "sql": "CREATE TABLE z (a INT, FOREIGN KEY (a) REFERENCES parent (b, c))"
+    },
+    {
+      "name": "generic-identity-line-592",
+      "sourceLine": 592,
+      "sql": "CREATE TABLE products (x INT GENERATED BY DEFAULT AS IDENTITY)"
+    },
+    {
+      "name": "generic-identity-line-594",
+      "sourceLine": 594,
+      "sql": "CREATE TABLE products (x INT GENERATED ALWAYS AS IDENTITY)"
+    },
+    {
+      "name": "generic-identity-line-600",
+      "sourceLine": 600,
+      "sql": "CREATE TABLE customer (period INT NOT NULL)"
+    },
+    {
+      "name": "generic-identity-line-605",
+      "sourceLine": 605,
+      "sql": "CREATE TABLE t (title TEXT)"
+    },
+    {
+      "name": "generic-identity-line-606",
+      "sourceLine": 606,
+      "sql": "CREATE TABLE foo (baz INT, inline TEXT)"
+    },
+    {
+      "name": "generic-identity-line-608",
+      "sourceLine": 608,
+      "sql": "CREATE TEMPORARY TABLE x AS SELECT a FROM d"
+    },
+    {
+      "name": "generic-identity-line-609",
+      "sourceLine": 609,
+      "sql": "CREATE TEMPORARY TABLE IF NOT EXISTS x AS SELECT a FROM d"
+    },
+    {
+      "name": "generic-identity-line-611",
+      "sourceLine": 611,
+      "sql": "CREATE VIEW x AS SELECT a FROM b"
+    },
+    {
+      "name": "generic-identity-line-615",
+      "sourceLine": 615,
+      "sql": "CREATE OR REPLACE VIEW x AS SELECT *"
+    },
+    {
+      "name": "generic-identity-line-616",
+      "sourceLine": 616,
+      "sql": "CREATE OR REPLACE TEMPORARY VIEW x AS SELECT *"
+    },
+    {
+      "name": "generic-identity-line-617",
+      "sourceLine": 617,
+      "sql": "CREATE TEMPORARY VIEW x AS SELECT a FROM d"
+    },
+    {
+      "name": "generic-identity-line-619",
+      "sourceLine": 619,
+      "sql": "CREATE TEMPORARY VIEW x AS WITH y AS (SELECT 1) SELECT * FROM y"
+    },
+    {
+      "name": "generic-identity-line-637",
+      "sourceLine": 637,
+      "sql": "CREATE INDEX abc ON t(a)"
+    },
+    {
+      "name": "generic-identity-line-638",
+      "sourceLine": 638,
+      "sql": "CREATE INDEX \"abc\" ON t(a)"
+    },
+    {
+      "name": "generic-identity-line-639",
+      "sourceLine": 639,
+      "sql": "CREATE INDEX abc ON t(a, b, b)"
+    },
+    {
+      "name": "generic-identity-line-640",
+      "sourceLine": 640,
+      "sql": "CREATE INDEX abc ON t(a NULLS LAST)"
+    },
+    {
+      "name": "generic-identity-line-642",
+      "sourceLine": 642,
+      "sql": "CREATE UNIQUE INDEX abc ON t(a, b, b)"
+    },
+    {
+      "name": "generic-identity-line-643",
+      "sourceLine": 643,
+      "sql": "CREATE UNIQUE INDEX IF NOT EXISTS my_idx ON tbl(a, b)"
+    },
+    {
+      "name": "generic-identity-line-654",
+      "sourceLine": 654,
+      "sql": "DROP INDEX a.b.c"
+    },
+    {
+      "name": "generic-identity-line-672",
+      "sourceLine": 672,
+      "sql": "DELETE FROM x WHERE y > 1"
+    },
+    {
+      "name": "generic-identity-line-673",
+      "sourceLine": 673,
+      "sql": "DELETE FROM y"
+    },
+    {
+      "name": "generic-identity-line-674",
+      "sourceLine": 674,
+      "sql": "DELETE FROM event USING sales WHERE event.eventid = sales.eventid"
+    },
+    {
+      "name": "generic-identity-line-675",
+      "sourceLine": 675,
+      "sql": "DELETE FROM event USING sales, bla WHERE event.eventid = sales.eventid"
+    },
+    {
+      "name": "generic-identity-line-676",
+      "sourceLine": 676,
+      "sql": "DELETE FROM event USING sales AS s WHERE event.eventid = s.eventid"
+    },
+    {
+      "name": "generic-identity-line-677",
+      "sourceLine": 677,
+      "sql": "DELETE FROM event AS event USING sales AS s WHERE event.eventid = s.eventid"
+    },
+    {
+      "name": "generic-identity-line-678",
+      "sourceLine": 678,
+      "sql": "DROP TABLE a"
+    },
+    {
+      "name": "generic-identity-line-679",
+      "sourceLine": 679,
+      "sql": "DROP TABLE a.b"
+    },
+    {
+      "name": "generic-identity-line-680",
+      "sourceLine": 680,
+      "sql": "DROP TABLE IF EXISTS a"
+    },
+    {
+      "name": "generic-identity-line-681",
+      "sourceLine": 681,
+      "sql": "DROP TABLE IF EXISTS a.b"
+    },
+    {
+      "name": "generic-identity-line-682",
+      "sourceLine": 682,
+      "sql": "DROP TABLE a CASCADE"
+    },
+    {
+      "name": "generic-identity-line-685",
+      "sourceLine": 685,
+      "sql": "DROP VIEW a"
+    },
+    {
+      "name": "generic-identity-line-686",
+      "sourceLine": 686,
+      "sql": "DROP VIEW a.b"
+    },
+    {
+      "name": "generic-identity-line-687",
+      "sourceLine": 687,
+      "sql": "DROP VIEW IF EXISTS a"
+    },
+    {
+      "name": "generic-identity-line-688",
+      "sourceLine": 688,
+      "sql": "DROP VIEW IF EXISTS a.b"
+    },
+    {
+      "name": "generic-identity-line-693",
+      "sourceLine": 693,
+      "sql": "INSERT INTO x SELECT * FROM y"
+    },
+    {
+      "name": "generic-identity-line-695",
+      "sourceLine": 695,
+      "sql": "INSERT INTO x WITH y AS (SELECT 1) SELECT * FROM y"
+    },
+    {
+      "name": "generic-identity-line-697",
+      "sourceLine": 697,
+      "sql": "INSERT INTO x VALUES (1, 'a', 2.0)"
+    },
+    {
+      "name": "generic-identity-line-699",
+      "sourceLine": 699,
+      "sql": "INSERT INTO y (a, b, c) SELECT a, b, c FROM x"
+    },
+    {
+      "name": "generic-identity-line-702",
+      "sourceLine": 702,
+      "sql": "INSERT INTO \"tests_user\" (\"username\", \"first_name\", \"last_name\") VALUES ('fiara', 'Fiara', 'Ironhide') RETURNING \"tests_user\".\"id\""
+    },
+    {
+      "name": "generic-identity-line-703",
+      "sourceLine": 703,
+      "sql": "INSERT INTO t1 (tc1 /* tc1 */, tc2 /* tc2 */) SELECT c1 /* sc1 */, c2 /* sc2 */ FROM t"
+    },
+    {
+      "name": "generic-identity-line-704",
+      "sourceLine": 704,
+      "sql": "INSERT INTO t1 (\"tc1\" /* tc1 */, \"tc2\" /* tc2 */) SELECT \"c1\" /* sc1 */, \"c2\" /* sc2 */ FROM t"
+    },
+    {
+      "name": "generic-identity-line-719",
+      "sourceLine": 719,
+      "sql": "UPDATE tbl_name SET foo = 123"
+    },
+    {
+      "name": "generic-identity-line-720",
+      "sourceLine": 720,
+      "sql": "UPDATE tbl_name SET foo = 123, bar = 345"
+    },
+    {
+      "name": "generic-identity-line-721",
+      "sourceLine": 721,
+      "sql": "UPDATE db.tbl_name SET foo = 123 WHERE tbl_name.bar = 234"
+    },
+    {
+      "name": "generic-identity-line-722",
+      "sourceLine": 722,
+      "sql": "UPDATE db.tbl_name SET foo = 123, foo_1 = 234 WHERE tbl_name.bar = 234"
+    },
+    {
+      "name": "generic-identity-line-735",
+      "sourceLine": 735,
+      "sql": "SELECT :hello, ? FROM x LIMIT :my_limit"
+    },
+    {
+      "name": "generic-identity-line-740",
+      "sourceLine": 740,
+      "sql": "SELECT (WITH x AS (SELECT 1 AS y) SELECT * FROM x) AS z"
+    },
+    {
+      "name": "generic-identity-line-741",
+      "sourceLine": 741,
+      "sql": "SELECT ((SELECT 1) + 1)"
+    },
+    {
+      "name": "generic-identity-line-744",
+      "sourceLine": 744,
+      "sql": "SELECT * FROM project.dataset.INFORMATION_SCHEMA.TABLES"
+    },
+    {
+      "name": "generic-identity-line-745",
+      "sourceLine": 745,
+      "sql": "SELECT CAST(x AS INT) /* comment */ FROM foo"
+    },
+    {
+      "name": "generic-identity-line-746",
+      "sourceLine": 746,
+      "sql": "SELECT c /* c1 */ AS alias /* c2 */"
+    },
+    {
+      "name": "generic-identity-line-747",
+      "sourceLine": 747,
+      "sql": "SELECT a /* x */, b /* x */"
+    },
+    {
+      "name": "generic-identity-line-748",
+      "sourceLine": 748,
+      "sql": "SELECT a /* x */ /* y */ /* z */, b /* k */ /* m */"
+    },
+    {
+      "name": "generic-identity-line-749",
+      "sourceLine": 749,
+      "sql": "SELECT * FROM foo /* x */, bla /* x */"
+    },
+    {
+      "name": "generic-identity-line-750",
+      "sourceLine": 750,
+      "sql": "SELECT 1 /* comment */ + 1"
+    },
+    {
+      "name": "generic-identity-line-751",
+      "sourceLine": 751,
+      "sql": "SELECT 1 /* c1 */ + 2 /* c2 */"
+    },
+    {
+      "name": "generic-identity-line-752",
+      "sourceLine": 752,
+      "sql": "SELECT 1 /* c1 */ + /* c2 */ 2 /* c3 */"
+    },
+    {
+      "name": "generic-identity-line-753",
+      "sourceLine": 753,
+      "sql": "SELECT 1 /* c1 */ + 2 /* c2 */ + 3 /* c3 */"
+    },
+    {
+      "name": "generic-identity-line-754",
+      "sourceLine": 754,
+      "sql": "SELECT 1 /* c1 */ + 2 /* c2 */, 3 /* c3 */"
+    },
+    {
+      "name": "generic-identity-line-755",
+      "sourceLine": 755,
+      "sql": "SELECT x FROM a.b.c /* x */, e.f.g /* x */"
+    },
+    {
+      "name": "generic-identity-line-756",
+      "sourceLine": 756,
+      "sql": "SELECT FOO(x /* c */) /* FOO */, b /* b */"
+    },
+    {
+      "name": "generic-identity-line-758",
+      "sourceLine": 758,
+      "sql": "INSERT INTO foo SELECT * FROM bar /* comment */"
+    },
+    {
+      "name": "generic-identity-line-759",
+      "sourceLine": 759,
+      "sql": "/* c */ WITH x AS (SELECT 1) SELECT * FROM x"
+    },
+    {
+      "name": "generic-identity-line-762",
+      "sourceLine": 762,
+      "sql": "ALTER TABLE integers ADD COLUMN k INT"
+    },
+    {
+      "name": "generic-identity-line-767",
+      "sourceLine": 767,
+      "sql": "ALTER TABLE integers ADD COLUMN l INT DEFAULT 10"
+    },
+    {
+      "name": "generic-identity-line-768",
+      "sourceLine": 768,
+      "sql": "ALTER TABLE measurements ADD COLUMN mtime TIMESTAMPTZ DEFAULT NOW()"
+    },
+    {
+      "name": "generic-identity-line-769",
+      "sourceLine": 769,
+      "sql": "ALTER TABLE integers DROP COLUMN k"
+    },
+    {
+      "name": "generic-identity-line-770",
+      "sourceLine": 770,
+      "sql": "ALTER TABLE integers DROP COLUMN IF EXISTS k"
+    },
+    {
+      "name": "generic-identity-line-771",
+      "sourceLine": 771,
+      "sql": "ALTER TABLE integers DROP COLUMN k CASCADE"
+    },
+    {
+      "name": "generic-identity-line-774",
+      "sourceLine": 774,
+      "sql": "ALTER TABLE integers ALTER COLUMN i SET DEFAULT 10"
+    },
+    {
+      "name": "generic-identity-line-775",
+      "sourceLine": 775,
+      "sql": "ALTER TABLE integers ALTER COLUMN i DROP DEFAULT"
+    },
+    {
+      "name": "generic-identity-line-777",
+      "sourceLine": 777,
+      "sql": "ALTER TABLE mydataset.mytable DROP COLUMN A, DROP COLUMN IF EXISTS B"
+    },
+    {
+      "name": "generic-identity-line-783",
+      "sourceLine": 783,
+      "sql": "ALTER TABLE table1 RENAME COLUMN c1 TO c2"
+    },
+    {
+      "name": "generic-identity-line-785",
+      "sourceLine": 785,
+      "sql": "ALTER TABLE table1 RENAME TO table2"
+    },
+    {
+      "name": "generic-identity-line-789",
+      "sourceLine": 789,
+      "sql": "SELECT div.a FROM test_table AS div"
+    },
+    {
+      "name": "generic-identity-line-794",
+      "sourceLine": 794,
+      "sql": "ALTER TABLE \"schema\".\"tablename\" ADD CONSTRAINT \"CHK_Name\" CHECK (NOT \"IdDwh\" IS NULL AND \"IdDwh\" <> (0))"
+    },
+    {
+      "name": "generic-identity-line-795",
+      "sourceLine": 795,
+      "sql": "ALTER TABLE persons ADD CONSTRAINT persons_pk PRIMARY KEY (first_name, last_name)"
+    },
+    {
+      "name": "generic-identity-line-797",
+      "sourceLine": 797,
+      "sql": "ALTER TABLE pets ADD CONSTRAINT pets_name_not_cute_chk CHECK (LENGTH(name) < 20)"
+    },
+    {
+      "name": "generic-identity-line-798",
+      "sourceLine": 798,
+      "sql": "ALTER TABLE people10m ADD CONSTRAINT dateWithinRange CHECK (birthDate > '1900-01-01')"
+    },
+    {
+      "name": "generic-identity-line-807",
+      "sourceLine": 807,
+      "sql": "SELECT partition FROM a"
+    },
+    {
+      "name": "generic-identity-line-809",
+      "sourceLine": 809,
+      "sql": "SELECT id FROM b.a AS a QUALIFY ROW_NUMBER() OVER (PARTITION BY br ORDER BY sadf DESC) = 1"
+    },
+    {
+      "name": "generic-identity-line-840",
+      "sourceLine": 840,
+      "sql": "SELECT PERCENTILE_CONT(x, 0.5) OVER ()"
+    },
+    {
+      "name": "generic-identity-line-845",
+      "sourceLine": 845,
+      "sql": "SELECT * FROM current_date"
+    },
+    {
+      "name": "generic-identity-line-846",
+      "sourceLine": 846,
+      "sql": "SELECT * FROM schema.current_date"
+    },
+    {
+      "name": "generic-identity-line-847",
+      "sourceLine": 847,
+      "sql": "SELECT /*+ SOME_HINT(foo) */ 1"
+    },
+    {
+      "name": "generic-identity-line-848",
+      "sourceLine": 848,
+      "sql": "SELECT /*+ REBALANCE */ * FROM foo"
+    },
+    {
+      "name": "generic-identity-line-850",
+      "sourceLine": 850,
+      "sql": "/* comment1 */ INSERT INTO x /* comment2 */ VALUES (1, 2, 3)"
+    },
+    {
+      "name": "generic-identity-line-851",
+      "sourceLine": 851,
+      "sql": "/* comment1 */ UPDATE tbl /* comment2 */ SET x = 2 WHERE x < 2"
+    },
+    {
+      "name": "generic-identity-line-852",
+      "sourceLine": 852,
+      "sql": "/* comment1 */ DELETE FROM x /* comment2 */ WHERE y > 1"
+    },
+    {
+      "name": "generic-identity-line-853",
+      "sourceLine": 853,
+      "sql": "/* comment */ CREATE TABLE foo AS SELECT 1"
+    },
+    {
+      "name": "generic-identity-line-855",
+      "sourceLine": 855,
+      "sql": "SELECT \"any\", \"case\", \"if\", \"next\""
+    },
+    {
+      "name": "generic-identity-line-856",
+      "sourceLine": 856,
+      "sql": "SELECT x FROM y ORDER BY x ASC"
+    },
+    {
+      "name": "generic-identity-line-862",
+      "sourceLine": 862,
+      "sql": "SELECT x FROM t1 UNION ALL SELECT x FROM t2 LIMIT 1"
+    },
+    {
+      "name": "generic-identity-line-863",
+      "sourceLine": 863,
+      "sql": "SELECT x FROM t1 UNION ALL SELECT x FROM t2 UNION ALL SELECT x FROM t3 LIMIT 1"
+    },
+    {
+      "name": "generic-identity-line-864",
+      "sourceLine": 864,
+      "sql": "WITH use(use) AS (SELECT 1) SELECT use FROM use"
+    },
+    {
+      "name": "generic-identity-line-866",
+      "sourceLine": 866,
+      "sql": "SELECT (ROW_NUMBER() OVER (PARTITION BY user ORDER BY date ASC) - ROW_NUMBER() OVER (PARTITION BY user, segment ORDER BY date ASC)) AS group_id FROM example_table"
+    },
+    {
+      "name": "generic-identity-line-874",
+      "sourceLine": 874,
+      "sql": "SELECT enum"
+    },
+    {
+      "name": "generic-identity-line-875",
+      "sourceLine": 875,
+      "sql": "SELECT unlogged"
+    },
+    {
+      "name": "generic-identity-line-876",
+      "sourceLine": 876,
+      "sql": "SELECT name"
+    },
+    {
+      "name": "generic-identity-line-877",
+      "sourceLine": 877,
+      "sql": "SELECT copy"
+    },
+    {
+      "name": "generic-identity-line-878",
+      "sourceLine": 878,
+      "sql": "SELECT rollup"
+    },
+    {
+      "name": "generic-identity-line-879",
+      "sourceLine": 879,
+      "sql": "SELECT unnest"
+    },
+    {
+      "name": "generic-identity-line-880",
+      "sourceLine": 880,
+      "sql": "SELECT cube, cube.x FROM cube"
+    },
+    {
+      "name": "generic-identity-line-882",
+      "sourceLine": 882,
+      "sql": "SELECT COUNT(DISTINCT \"foo bar\") FROM (SELECT 1 AS \"foo bar\") AS t"
+    },
+    {
+      "name": "generic-identity-line-883",
+      "sourceLine": 883,
+      "sql": "SELECT vector"
+    },
+    {
+      "name": "generic-identity-line-897",
+      "sourceLine": 897,
+      "sql": "SELECT attach"
+    },
+    {
+      "name": "generic-identity-line-898",
+      "sourceLine": 898,
+      "sql": "SELECT detach"
+    },
+    {
+      "name": "generic-identity-line-899",
+      "sourceLine": 899,
+      "sql": "SELECT 1 OFFSET 1"
+    },
+    {
+      "name": "generic-identity-line-900",
+      "sourceLine": 900,
+      "sql": "SELECT 1 LIMIT 1"
+    },
+    {
+      "name": "generic-identity-line-904",
+      "sourceLine": 904,
+      "sql": "SELECT export"
+    },
+    {
+      "name": "generic-identity-line-914",
+      "sourceLine": 914,
+      "sql": "SELECT ACOS(x)"
+    },
+    {
+      "name": "generic-identity-line-915",
+      "sourceLine": 915,
+      "sql": "SELECT ACOSH(x)"
+    },
+    {
+      "name": "generic-identity-line-916",
+      "sourceLine": 916,
+      "sql": "SELECT ASIN(x)"
+    },
+    {
+      "name": "generic-identity-line-917",
+      "sourceLine": 917,
+      "sql": "SELECT ASINH(x)"
+    },
+    {
+      "name": "generic-identity-line-918",
+      "sourceLine": 918,
+      "sql": "SELECT ATAN(x)"
+    },
+    {
+      "name": "generic-identity-line-919",
+      "sourceLine": 919,
+      "sql": "SELECT ATANH(x)"
+    },
+    {
+      "name": "generic-identity-line-920",
+      "sourceLine": 920,
+      "sql": "SELECT ATAN2(x, y)"
+    },
+    {
+      "name": "generic-identity-line-921",
+      "sourceLine": 921,
+      "sql": "SELECT COT(x)"
+    },
+    {
+      "name": "generic-identity-line-922",
+      "sourceLine": 922,
+      "sql": "SELECT COTH(x)"
+    },
+    {
+      "name": "generic-identity-line-923",
+      "sourceLine": 923,
+      "sql": "SELECT CSC(x)"
+    },
+    {
+      "name": "generic-identity-line-924",
+      "sourceLine": 924,
+      "sql": "SELECT CSCH(x)"
+    },
+    {
+      "name": "generic-identity-line-925",
+      "sourceLine": 925,
+      "sql": "SELECT RADIANS(x)"
+    },
+    {
+      "name": "generic-identity-line-926",
+      "sourceLine": 926,
+      "sql": "SELECT SEC(x)"
+    },
+    {
+      "name": "generic-identity-line-927",
+      "sourceLine": 927,
+      "sql": "SELECT SECH(x)"
+    },
+    {
+      "name": "generic-identity-line-928",
+      "sourceLine": 928,
+      "sql": "SELECT UTC_DATE"
+    },
+    {
+      "name": "generic-identity-line-929",
+      "sourceLine": 929,
+      "sql": "SELECT UTC_TIME"
+    },
+    {
+      "name": "generic-identity-line-930",
+      "sourceLine": 930,
+      "sql": "SELECT UTC_TIMESTAMP"
+    },
+    {
+      "name": "generic-identity-line-931",
+      "sourceLine": 931,
+      "sql": "SELECT SIN(x)"
+    },
+    {
+      "name": "generic-identity-line-932",
+      "sourceLine": 932,
+      "sql": "SELECT SINH(x)"
+    },
+    {
+      "name": "generic-identity-line-933",
+      "sourceLine": 933,
+      "sql": "SELECT TANH(x)"
+    },
+    {
+      "name": "generic-identity-line-934",
+      "sourceLine": 934,
+      "sql": "SELECT COSINE_DISTANCE(v1, v2)"
+    },
+    {
+      "name": "generic-identity-line-935",
+      "sourceLine": 935,
+      "sql": "SELECT EUCLIDEAN_DISTANCE(v1, v2)"
+    },
+    {
+      "name": "generic-identity-line-940",
+      "sourceLine": 940,
+      "sql": "SELECT lock"
+    },
+    {
+      "name": "generic-identity-line-944",
+      "sourceLine": 944,
+      "sql": "WITH UNNEST AS (SELECT 1 AS UNNEST) SELECT UNNEST FROM UNNEST"
+    },
+    {
+      "name": "generic-identity-line-949",
+      "sourceLine": 949,
+      "sql": "SELECT CURRENT_DATABASE()"
+    },
+    {
+      "name": "generic-identity-line-950",
+      "sourceLine": 950,
+      "sql": "SELECT CURRENT_SCHEMAS(arg_bool)"
+    },
+    {
+      "name": "generic-identity-line-951",
+      "sourceLine": 951,
+      "sql": "SELECT UNIFORM(1, 10, 5)"
+    },
+    {
+      "name": "generic-identity-line-952",
+      "sourceLine": 952,
+      "sql": "SELECT UNIFORM(1, 10)"
+    },
+    {
+      "name": "generic-identity-line-953",
+      "sourceLine": 953,
+      "sql": "SELECT CURRENT_TIMEZONE()"
+    }
+  ]
+}

@@ -12,7 +12,8 @@ Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutabl
 - Window functions with `OVER`, `PARTITION BY`, and window ordering
 - Window frames, named window definitions, aggregate `FILTER`, and `WITHIN GROUP`
 - `VALUES` queries, `MERGE`, extended DML, and core relational DDL
-- Oracle bind variables, `MINUS`, sequences, hierarchical queries, and row limiting
+- PostgreSQL `EXPLAIN` options and SQLite date, JSON aggregate, and scalar-function rewrites
+- Oracle bind variables, `MINUS`, sequences, hierarchical queries, row limiting, and native type forms
 - Public dialect base class, registry, and fluent custom dialect builder
 - Custom literal and argument-aware function rendering hooks
 - Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
@@ -110,7 +111,8 @@ Cyqwel handles:
 - Queries: `SELECT`, `VALUES`, joins with `ON` or `USING`, natural joins, predicates, grouping, ordering, row limits, recursive/materialized CTEs, named windows, window frames, and set operations.
 - Expressions: functions and aggregate modifiers, `CASE`, `CAST`/`TRY_CAST`, rows, intervals, extraction, collation, sequences, subqueries, parameters, boolean tests, and common unary and binary operators.
 - DML: `INSERT VALUES`/`SELECT`, `UPDATE ... FROM`, `DELETE ... USING`, `MERGE`, `RETURNING`, and Oracle `RETURNING ... INTO`.
-- DDL: create/alter/drop/truncate tables, columns and common constraints, views, indexes, and sequences.
-- Oracle: colon bind variables, `MINUS`, `FETCH FIRST`, `NEXTVAL`/`CURRVAL`, `START WITH`/`CONNECT BY`, `PRIOR`, `ORDER SIBLINGS BY`, and common function normalization.
+- DDL: create/alter/drop/truncate tables, columns and common constraints, views (including MySQL `SQL SECURITY`), indexes, and sequences.
+- PostgreSQL: parenthesized `EXPLAIN` options with `ANALYZE` preservation and common SQLite/T-SQL function rewrites.
+- Oracle: colon bind variables, `MINUS`, `FETCH FIRST`, `NEXTVAL`/`CURRVAL`, `START WITH`/`CONNECT BY`, `PRIOR`, `ORDER SIBLINGS BY`, native numeric/character/temporal/interval type forms, and common function normalization.
 
 The built-in scope targets standard relational databases. Warehouse-only statements and engine-specific administration commands remain outside the shared AST unless they overlap common RDBMS SQL.

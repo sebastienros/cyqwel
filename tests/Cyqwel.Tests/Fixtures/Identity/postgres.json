@@ -1,0 +1,282 @@
+{
+  "dialect": "postgres",
+  "provenance": {
+    "source": "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/dialects/test_postgres.py",
+    "sqlglotTag": "v30.12.0",
+    "sqlglotCommit": "64e268a5d95cd84a87ad74ef569fc9bf356fd3fb",
+    "extractor": "tobilg/polyglot tools/sqlglot-extract/extract-tests.py at 7c4f1f20197377e220e479c78dc1a8b6e64ced0b",
+    "note": "Polyglot does not commit generated fixture blobs; these cases were regenerated from its pinned SQLGlot tag."
+  },
+  "selection": "Statically ported cases whose syntax is represented by Cyqwel; the test harness never filters or skips cases at runtime.",
+  "excludedCategories": [
+    "Administrative, procedural, trigger, grant, hint, and engine table-option syntax outside Cyqwel relational AST scope.",
+    "Advanced extension syntax not represented by Cyqwel, including JSON/path operators, arrays and ranges, table functions, PIVOT, MATCH_RECOGNIZE, and TABLESAMPLE.",
+    "Cases that assert SQLGlot warning, error, formatting, or identifier-normalization behavior rather than parse/generate stability."
+  ],
+  "cases": [
+    {
+      "name": "postgres-identity-2",
+      "sourceIndex": 2,
+      "sql": "SELECT GET_BIT(CAST(44 AS BIT(10)), 6)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-3",
+      "sourceIndex": 3,
+      "sql": "SELECT * FROM t GROUP BY ROLLUP (a || '^' || b)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-4",
+      "sourceIndex": 4,
+      "sql": "SELECT COSH(1.5)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-5",
+      "sourceIndex": 5,
+      "sql": "SELECT EXP(1)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-6",
+      "sourceIndex": 6,
+      "sql": "SELECT MODE() WITHIN GROUP (ORDER BY status DESC) AS most_common FROM orders",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-7",
+      "sourceIndex": 7,
+      "sql": "SELECT ST_DISTANCE(gg1, gg2, FALSE) AS sphere_dist",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-12",
+      "sourceIndex": 12,
+      "sql": "SELECT EXTRACT(QUARTER FROM CAST('2025-04-26' AS DATE))",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-13",
+      "sourceIndex": 13,
+      "sql": "SELECT DATE_TRUNC('QUARTER', CAST('2025-04-26' AS DATE))",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-15",
+      "sourceIndex": 15,
+      "sql": "SELECT x FROM t WHERE CAST($1 AS TEXT) = 'ok'",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-44",
+      "sourceIndex": 44,
+      "sql": "SELECT CASE WHEN SUBSTRING('abcdefg') IN ('ab') THEN 1 ELSE 0 END",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-59",
+      "sourceIndex": 59,
+      "sql": "SELECT ~x",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-65",
+      "sourceIndex": 65,
+      "sql": "SELECT CURRENT_SCHEMA",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-66",
+      "sourceIndex": 66,
+      "sql": "SELECT CURRENT_USER",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-67",
+      "sourceIndex": 67,
+      "sql": "SELECT CURRENT_ROLE",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-68",
+      "sourceIndex": 68,
+      "sql": "SELECT VERSION()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-78",
+      "sourceIndex": 78,
+      "sql": "SELECT date_col - INTERVAL '30' DAY FROM t",
+      "upstreamExpected": "SELECT date_col - INTERVAL '30 DAY' FROM t"
+    },
+    {
+      "name": "postgres-identity-79",
+      "sourceIndex": 79,
+      "sql": "SELECT date_col - INTERVAL '1' HOUR AS one_hour_later",
+      "upstreamExpected": "SELECT date_col - INTERVAL '1 HOUR' AS one_hour_later"
+    },
+    {
+      "name": "postgres-identity-86",
+      "sourceIndex": 86,
+      "sql": "WITH t1 AS MATERIALIZED (SELECT 1), t2 AS NOT MATERIALIZED (SELECT 2) SELECT * FROM t1, t2",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-99",
+      "sourceIndex": 99,
+      "sql": "SELECT TO_TIMESTAMP(1284352323.5), TO_TIMESTAMP('05 Dec 2000', 'DD Mon YYYY')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-100",
+      "sourceIndex": 100,
+      "sql": "SELECT TO_TIMESTAMP('05 Dec 2000 10:00 AM', 'DD Mon YYYY HH:MI AM')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-101",
+      "sourceIndex": 101,
+      "sql": "SELECT TO_TIMESTAMP('05 Dec 2000 10:00 PM', 'DD Mon YYYY HH:MI PM')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-104",
+      "sourceIndex": 104,
+      "sql": "SELECT date_add(current_date, interval '7' day)",
+      "upstreamExpected": "SELECT CURRENT_DATE + INTERVAL '7 DAY'"
+    },
+    {
+      "name": "postgres-identity-119",
+      "sourceIndex": 119,
+      "sql": "UPDATE MYTABLE T1 SET T1.COL = 13",
+      "upstreamExpected": "UPDATE MYTABLE AS T1 SET T1.COL = 13"
+    },
+    {
+      "name": "postgres-identity-150",
+      "sourceIndex": 150,
+      "sql": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY d ROWS 1 PRECEDING)",
+      "upstreamExpected": "SELECT SUM(x) OVER (PARTITION BY a ORDER BY d ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)"
+    },
+    {
+      "name": "postgres-identity-186",
+      "sourceIndex": 186,
+      "sql": "/*+ some comment*/ SELECT b.foo, b.bar FROM baz AS b",
+      "upstreamExpected": "/* + some comment */ SELECT b.foo, b.bar FROM baz AS b"
+    },
+    {
+      "name": "postgres-identity-194",
+      "sourceIndex": 194,
+      "sql": "SELECT JSON_AGG(DISTINCT name) FROM users",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-215",
+      "sourceIndex": 215,
+      "sql": "CREATE TABLE public.y (x TSTZRANGE NOT NULL)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-216",
+      "sourceIndex": 216,
+      "sql": "CREATE TABLE test (foo HSTORE)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-217",
+      "sourceIndex": 217,
+      "sql": "CREATE TABLE test (foo JSONB)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-220",
+      "sourceIndex": 220,
+      "sql": "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING a",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-221",
+      "sourceIndex": 221,
+      "sql": "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING a, b",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-222",
+      "sourceIndex": 222,
+      "sql": "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING *",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-223",
+      "sourceIndex": 223,
+      "sql": "UPDATE tbl_name SET foo = 123 RETURNING a",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-230",
+      "sourceIndex": 230,
+      "sql": "TRUNCATE TABLE t1 CASCADE",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-265",
+      "sourceIndex": 265,
+      "sql": "DELETE FROM event USING sales AS s WHERE event.eventid = s.eventid RETURNING a",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-274",
+      "sourceIndex": 274,
+      "sql": "ALTER TABLE foo ADD COLUMN id BIGINT NOT NULL PRIMARY KEY DEFAULT 1, ADD CONSTRAINT fk_orders_user FOREIGN KEY (id) REFERENCES foo (id)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-295",
+      "sourceIndex": 295,
+      "sql": "CREATE TABLE products (product_no INT UNIQUE, name TEXT, price DECIMAL)",
+      "upstreamExpected": "CREATE TABLE products (product_no INT UNIQUE, name TEXT, price DECIMAL)"
+    },
+    {
+      "name": "postgres-identity-297",
+      "sourceIndex": 297,
+      "sql": "CREATE TABLE products (product_no INT, name TEXT, price DECIMAL, UNIQUE (product_no, name))",
+      "upstreamExpected": "CREATE TABLE products (product_no INT, name TEXT, price DECIMAL, UNIQUE (product_no, name))"
+    },
+    {
+      "name": "postgres-identity-303",
+      "sourceIndex": 303,
+      "sql": "CREATE TABLE tbl (col UUID UNIQUE DEFAULT GEN_RANDOM_UUID())",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-305",
+      "sourceIndex": 305,
+      "sql": "CREATE TABLE tbl (col_a INT GENERATED ALWAYS AS (1 + 2) STORED)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-309",
+      "sourceIndex": 309,
+      "sql": "DROP INDEX ix_table_id",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-310",
+      "sourceIndex": 310,
+      "sql": "DROP INDEX IF EXISTS ix_table_id",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-317",
+      "sourceIndex": 317,
+      "sql": "SELECT CONCAT('abcde', 2, NULL, 22)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "postgres-identity-341",
+      "sourceIndex": 341,
+      "sql": "CREATE TABLE foo (data XML)",
+      "upstreamExpected": null
+    }
+  ]
+}

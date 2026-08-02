@@ -1,0 +1,306 @@
+{
+  "dialect": "tsql",
+  "provenance": {
+    "source": "https://github.com/tobymao/sqlglot/blob/v30.12.0/tests/dialects/test_tsql.py",
+    "sqlglotTag": "v30.12.0",
+    "sqlglotCommit": "64e268a5d95cd84a87ad74ef569fc9bf356fd3fb",
+    "extractor": "tobilg/polyglot tools/sqlglot-extract/extract-tests.py at 7c4f1f20197377e220e479c78dc1a8b6e64ced0b",
+    "note": "Polyglot does not commit generated fixture blobs; these cases were regenerated from its pinned SQLGlot tag."
+  },
+  "selection": "Statically ported cases whose syntax is represented by Cyqwel; the test harness never filters or skips cases at runtime.",
+  "excludedCategories": [
+    "Administrative, procedural, trigger, grant, hint, and engine table-option syntax outside Cyqwel relational AST scope.",
+    "Advanced extension syntax not represented by Cyqwel, including JSON/path operators, arrays and ranges, table functions, PIVOT, MATCH_RECOGNIZE, and TABLESAMPLE.",
+    "Cases that assert SQLGlot warning, error, formatting, or identifier-normalization behavior rather than parse/generate stability."
+  ],
+  "cases": [
+    {
+      "name": "tsql-identity-1",
+      "sourceIndex": 1,
+      "sql": "SELECT TOP (SELECT 1) * FROM t",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-2",
+      "sourceIndex": 2,
+      "sql": "SELECT ATN2(x, y)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-3",
+      "sourceIndex": 3,
+      "sql": "SELECT EXP(1)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-4",
+      "sourceIndex": 4,
+      "sql": "SELECT SYSDATETIMEOFFSET()",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-5",
+      "sourceIndex": 5,
+      "sql": "SELECT COMPRESS('Hello World')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-7",
+      "sourceIndex": 7,
+      "sql": "DROP view a.b.c",
+      "upstreamExpected": "DROP VIEW b.c"
+    },
+    {
+      "name": "tsql-identity-10",
+      "sourceIndex": 10,
+      "sql": "SELECT TRIM('     test    ') AS Result",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-15",
+      "sourceIndex": 15,
+      "sql": "SELECT CONCAT(column1, column2)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-19",
+      "sourceIndex": 19,
+      "sql": "SELECT TestSpecialChar.Test_ FROM TestSpecialChar",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-20",
+      "sourceIndex": 20,
+      "sql": "SELECT TOP (2 + 1) 1",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-21",
+      "sourceIndex": 21,
+      "sql": "SELECT * FROM t WHERE NOT c",
+      "upstreamExpected": "SELECT * FROM t WHERE NOT c <> 0"
+    },
+    {
+      "name": "tsql-identity-25",
+      "sourceIndex": 25,
+      "sql": "WITH t1 AS (SELECT 1 AS a), t2 AS (SELECT 1 AS a) SELECT TOP 10 a FROM t1 UNION ALL SELECT TOP 10 a FROM t2",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-31",
+      "sourceIndex": 31,
+      "sql": "WITH t1 AS (SELECT 1 AS a), t2 AS (SELECT 1 AS a) SELECT TOP 10 a FROM t1 UNION ALL SELECT TOP 10 a FROM t2 ORDER BY a DESC",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-32",
+      "sourceIndex": 32,
+      "sql": "WITH t1 AS (SELECT 1 AS a), t2 AS (SELECT 1 AS a) SELECT COUNT(*) FROM (SELECT TOP 10 a FROM t1 UNION ALL SELECT TOP 10 a FROM t2 ORDER BY a DESC) AS t",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-33",
+      "sourceIndex": 33,
+      "sql": "SELECT 1 AS \"[x]\"",
+      "upstreamExpected": "SELECT 1 AS [[x]]]"
+    },
+    {
+      "name": "tsql-identity-34",
+      "sourceIndex": 34,
+      "sql": "INSERT INTO foo.bar WITH cte AS (SELECT 1 AS one) SELECT * FROM cte",
+      "upstreamExpected": "WITH cte AS (SELECT 1 AS one) INSERT INTO foo.bar SELECT * FROM cte"
+    },
+    {
+      "name": "tsql-identity-36",
+      "sourceIndex": 36,
+      "sql": "CREATE TABLE x (A INTEGER NOT NULL, B INTEGER NULL)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-38",
+      "sourceIndex": 38,
+      "sql": "CREATE TABLE [db].[tbl]([a] [int])",
+      "upstreamExpected": "CREATE TABLE [db].[tbl] ([a] INTEGER)"
+    },
+    {
+      "name": "tsql-identity-48",
+      "sourceIndex": 48,
+      "sql": "SELECT CASE WHEN a > 1 THEN b END",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-49",
+      "sourceIndex": 49,
+      "sql": "SELECT * FROM taxi ORDER BY 1 OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-58",
+      "sourceIndex": 58,
+      "sql": "SELECT a = 1",
+      "upstreamExpected": "SELECT 1 AS a"
+    },
+    {
+      "name": "tsql-identity-60",
+      "sourceIndex": 60,
+      "sql": "SELECT a = 1 UNION ALL SELECT a = b",
+      "upstreamExpected": "SELECT 1 AS a UNION ALL SELECT b AS a"
+    },
+    {
+      "name": "tsql-identity-62",
+      "sourceIndex": 62,
+      "sql": "SELECT DISTINCT DepartmentName, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY BaseRate) OVER (PARTITION BY DepartmentName) AS MedianCont FROM dbo.DimEmployee",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-63",
+      "sourceIndex": 63,
+      "sql": "SELECT \"x\".\"y\" FROM foo",
+      "upstreamExpected": "SELECT [x].[y] FROM foo"
+    },
+    {
+      "name": "tsql-identity-91",
+      "sourceIndex": 91,
+      "sql": "CREATE VIEW t AS WITH cte AS (SELECT 1 AS c) SELECT c FROM cte",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-140",
+      "sourceIndex": 140,
+      "sql": "SELECT CAST(SUBSTRING('ABCD~1234', CHARINDEX('~', 'ABCD~1234') + 1, LEN('ABCD~1234')) AS BIGINT)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-143",
+      "sourceIndex": 143,
+      "sql": "SELECT DATEPART(\"dd\", x)",
+      "upstreamExpected": "SELECT DATEPART(DAY, x)"
+    },
+    {
+      "name": "tsql-identity-144",
+      "sourceIndex": 144,
+      "sql": "SELECT DATEADD(YEAR, 1, '2017/08/25')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-145",
+      "sourceIndex": 145,
+      "sql": "SELECT DATEDIFF(HOUR, 1.5, '2021-01-01')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-146",
+      "sourceIndex": 146,
+      "sql": "SELECT DATEDIFF_BIG(HOUR, 1.5, '2021-01-01')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-150",
+      "sourceIndex": 150,
+      "sql": "SELECT FORMAT(foo, 'dddd', 'de-CH')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-151",
+      "sourceIndex": 151,
+      "sql": "SELECT FORMAT(EndOfDayRate, 'N', 'en-us')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-152",
+      "sourceIndex": 152,
+      "sql": "SELECT FORMAT('01-01-1991', 'd.mm.yyyy')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-153",
+      "sourceIndex": 153,
+      "sql": "SELECT FORMAT(12345, '###.###.###')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-154",
+      "sourceIndex": 154,
+      "sql": "SELECT FORMAT(1234567, 'f')",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-169",
+      "sourceIndex": 169,
+      "sql": "WITH t AS (SELECT 1) SELECT * FROM t",
+      "upstreamExpected": "WITH t AS (SELECT 1 AS [1]) SELECT * FROM t"
+    },
+    {
+      "name": "tsql-identity-170",
+      "sourceIndex": 170,
+      "sql": "WITH t AS (SELECT \"c\") SELECT * FROM t",
+      "upstreamExpected": "WITH t AS (SELECT [c] AS [c]) SELECT * FROM t"
+    },
+    {
+      "name": "tsql-identity-171",
+      "sourceIndex": 171,
+      "sql": "SELECT * FROM (SELECT 1) AS subq",
+      "upstreamExpected": "SELECT * FROM (SELECT 1 AS [1]) AS subq"
+    },
+    {
+      "name": "tsql-identity-172",
+      "sourceIndex": 172,
+      "sql": "SELECT * FROM (SELECT \"c\") AS subq",
+      "upstreamExpected": "SELECT * FROM (SELECT [c] AS [c]) AS subq"
+    },
+    {
+      "name": "tsql-identity-195",
+      "sourceIndex": 195,
+      "sql": "SELECT COUNT(1) FROM x",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-196",
+      "sourceIndex": 196,
+      "sql": "SELECT COUNT_BIG(1) FROM x",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-199",
+      "sourceIndex": 199,
+      "sql": "SELECT 1; SELECT 2",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-201",
+      "sourceIndex": 201,
+      "sql": "SELECT go",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-202",
+      "sourceIndex": 202,
+      "sql": "SELECT 1 WHERE EXISTS(SELECT 1)",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-204",
+      "sourceIndex": 204,
+      "sql": "ALTER TABLE dbo.DocExe DROP CONSTRAINT FK_Column_B",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-205",
+      "sourceIndex": 205,
+      "sql": "SELECT a = 1",
+      "upstreamExpected": "SELECT 1 AS a"
+    },
+    {
+      "name": "tsql-identity-206",
+      "sourceIndex": 206,
+      "sql": "SELECT * FROM [#temp_table]",
+      "upstreamExpected": null
+    },
+    {
+      "name": "tsql-identity-207",
+      "sourceIndex": 207,
+      "sql": "SELECT * FROM [##temp_table]",
+      "upstreamExpected": null
+    }
+  ]
+}

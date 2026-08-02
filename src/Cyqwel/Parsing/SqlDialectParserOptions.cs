@@ -55,6 +55,9 @@ public sealed record SqlDialectParserOptions
         SupportsMinus = true,
         SupportsRecursiveCte = true,
         SupportsHierarchicalQueries = true,
+        SupportsExplainOptions = true,
+        SupportsCreateViewSecurity = true,
+        SupportsOracleDataTypes = true,
         DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
     };
 
@@ -95,6 +98,12 @@ public sealed record SqlDialectParserOptions
     public bool SupportsHierarchicalQueries { get; init; }
 
     public bool SupportsTableAliasAs { get; init; } = true;
+
+    public bool SupportsExplainOptions { get; init; }
+
+    public bool SupportsCreateViewSecurity { get; init; }
+
+    public bool SupportsOracleDataTypes { get; init; }
 
     public SqlDoublePipeBehavior DoublePipeBehavior { get; init; } = SqlDoublePipeBehavior.Concatenate;
 }

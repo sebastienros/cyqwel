@@ -16,6 +16,8 @@ internal static partial class SqlNodeChildren
                 return ValuesChildren(value);
             case SetOperationStatement value:
                 return SetOperationChildren(value);
+            case ExplainStatement value:
+                return [value.Query];
             case InsertStatement value:
                 return InsertChildren(value);
             case UpdateStatement value:
@@ -87,7 +89,9 @@ internal static partial class SqlNodeChildren
             case TryCastExpression value:
                 return [value.Expression, value.DataType];
             case SqlDataType value:
-                return [value.Name];
+                return value.IntervalEndField is null
+                    ? [value.Name]
+                    : [value.Name, value.IntervalEndField];
             case TableName value:
                 return value.Parts;
             case NamedTable value:

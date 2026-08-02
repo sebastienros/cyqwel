@@ -161,6 +161,20 @@ public static class SqlParser
         var MINVALUE = Keyword("MINVALUE");
         var MAXVALUE = Keyword("MAXVALUE");
         var INCREMENT = Keyword("INCREMENT");
+        var EXPLAIN = Keyword("EXPLAIN");
+        var ANALYZE = Keyword("ANALYZE");
+        var OFF = Keyword("OFF");
+        var SQL = Keyword("SQL");
+        var SECURITY = Keyword("SECURITY");
+        var DEFINER = Keyword("DEFINER");
+        var INVOKER = Keyword("INVOKER");
+        var BYTE = Keyword("BYTE");
+        var CHAR = Keyword("CHAR");
+        var LOCAL = Keyword("LOCAL");
+        var TIME = Keyword("TIME");
+        var ZONE = Keyword("ZONE");
+        var LONG = Keyword("LONG");
+        var RAW = Keyword("RAW");
 
         var reservedWords = CreateReservedWords(syntax);
 
@@ -282,14 +296,65 @@ public static class SqlParser
                     : call;
             });
 
+        var dataTypeArgument = Terms.Char('-').Optional()
+            .And(Terms.Decimal())
+            .Then(value => checked((int)(value.Item1.HasValue ? -value.Item2 : value.Item2)));
         var dataTypeArguments = Between(
             leftParenthesis,
-            Separated(comma, Terms.Decimal().Then(value => checked((int)value))),
+            Separated(comma, dataTypeArgument),
             rightParenthesis);
-        var dataType = simpleIdentifier.And(dataTypeArguments.Optional())
-            .Then(value => new SqlDataType(
+        var dataTypeName = syntax.SupportsOracleDataTypes
+            ? LONG.SkipAnd(RAW).Then(new SqlIdentifier("LONG RAW"))
+                .Or(INTERVAL.SkipAnd(simpleIdentifier)
+                    .Then(value => new SqlIdentifier($"INTERVAL {value.Value}")))
+                .Or(simpleIdentifier)
+            : simpleIdentifier;
+        Parser<SqlDataType> dataType;
+        if (syntax.SupportsOracleDataTypes)
+        {
+            var lengthUnit = BYTE.Then(SqlDataTypeLengthUnit.Byte)
+                .Or(CHAR.Then(SqlDataTypeLengthUnit.Char));
+            var oracleDataTypeArguments = Between(
+                leftParenthesis,
+                Separated(comma, dataTypeArgument)
+                    .And(lengthUnit.Optional())
+                    .Then(value => new ParsedDataTypeArguments(
+                        value.Item1,
+                        value.Item2.HasValue
+                            ? value.Item2.Value
+                            : SqlDataTypeLengthUnit.Unspecified)),
+                rightParenthesis);
+            var dataTypeCore = dataTypeName.And(oracleDataTypeArguments.Optional());
+            var timeZone = WITH.SkipAnd(LOCAL.Optional())
+                .AndSkip(TIME)
+                .AndSkip(ZONE)
+                .Then(value => value.HasValue
+                    ? SqlDataTypeTimeZone.WithLocalTimeZone
+                    : SqlDataTypeTimeZone.WithTimeZone);
+            var intervalEnd = TO.SkipAnd(simpleIdentifier)
+                .And(dataTypeArguments.Optional());
+            dataType = dataTypeCore
+                .And(timeZone.Optional())
+                .And(intervalEnd.Optional())
+                .Then(value => new SqlDataType(
+                    value.Item1,
+                    value.Item2.HasValue ? value.Item2.Value.Arguments : null,
+                    value.Item2.HasValue
+                        ? value.Item2.Value.LengthUnit
+                        : SqlDataTypeLengthUnit.Unspecified,
+                    value.Item3.HasValue ? value.Item3.Value : SqlDataTypeTimeZone.Unspecified,
+                    value.Item4.HasValue ? value.Item4.Value.Item1 : null,
+                    value.Item4.HasValue && value.Item4.Value.Item2.HasValue
+                        ? value.Item4.Value.Item2.Value
+                        : null));
+        }
+        else
+        {
+            var dataTypeCore = dataTypeName.And(dataTypeArguments.Optional());
+            dataType = dataTypeCore.Then(value => new SqlDataType(
                 value.Item1,
                 value.Item2.HasValue ? value.Item2.Value : null));
+        }
         var cast = CAST.SkipAnd(leftParenthesis)
             .SkipAnd(expression)
             .AndSkip(AS)
@@ -1030,19 +1095,33 @@ public static class SqlParser
                 value.Item1.HasValue,
                 value.Item5.HasValue ? value.Item5.Value : null));
 
+        Parser<Option<ViewSecurity>> viewSecurity;
+        if (syntax.SupportsCreateViewSecurity)
+        {
+            viewSecurity = SQL.SkipAnd(SECURITY)
+                .SkipAnd(DEFINER.Then(ViewSecurity.Definer).Or(INVOKER.Then(ViewSecurity.Invoker)))
+                .Optional();
+        }
+        else
+        {
+            viewSecurity = Fail<ViewSecurity>().Optional();
+        }
+
         var createView = CREATE.SkipAnd(OR.SkipAnd(REPLACE).Optional())
             .And(TEMPORARY.Optional())
+            .And(viewSecurity)
             .AndSkip(VIEW)
             .And(tableName)
             .And(identifierList.Optional())
             .AndSkip(AS)
             .And(query)
             .Then<SqlStatement>(value => new CreateViewStatement(
-                value.Item3,
-                value.Item5,
-                value.Item4.HasValue ? value.Item4.Value : null,
+                value.Item4,
+                value.Item6,
+                value.Item5.HasValue ? value.Item5.Value : null,
                 value.Item1.HasValue,
-                value.Item2.HasValue));
+                value.Item2.HasValue,
+                value.Item3.HasValue ? value.Item3.Value : null));
 
         var indexColumn = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
             .Then(value => new IndexColumn(
@@ -1184,7 +1263,54 @@ public static class SqlParser
             .And(Separated(comma, alterTableAction))
             .Then<SqlStatement>(value => new AlterTableStatement(value.Item1, value.Item2));
 
-        var statement = query.Then<SqlStatement>(value => value)
+        Parser<SqlStatement> explain;
+        if (syntax.SupportsExplainOptions)
+        {
+            var explainWord = Terms.Identifier().Then(value => value.ToString());
+            var explainOptionName = ANALYZE
+                .Or(Keyword("VERBOSE"))
+                .Or(Keyword("COSTS"))
+                .Or(Keyword("FORMAT"))
+                .Or(Keyword("BUFFERS"))
+                .Or(Keyword("SETTINGS"))
+                .Or(Keyword("WAL"))
+                .Or(Keyword("TIMING"))
+                .Or(Keyword("SUMMARY"))
+                .Or(Keyword("SERIALIZE"))
+                .Or(Keyword("MEMORY"))
+                .Or(Keyword("GENERIC_PLAN"));
+            var explainOption = explainOptionName
+                .And(explainWord.Optional())
+                .Then(value => new ParsedExplainOption(
+                    value.Item1,
+                    value.Item2.HasValue ? value.Item2.Value : null));
+            var explainOptions = Between(
+                leftParenthesis,
+                Separated(comma, explainOption),
+                rightParenthesis);
+            var explainTarget = Between(leftParenthesis, query, rightParenthesis)
+                .Then(value => new ParsedExplainTarget(value, true))
+                .Or(query.Then(value => new ParsedExplainTarget(value, false)));
+            explain = EXPLAIN.SkipAnd(explainOptions.Optional())
+                .And(ANALYZE.Optional())
+                .And(explainTarget)
+                .Then<SqlStatement>(value => new ExplainStatement(
+                    value.Item3.Query,
+                    value.Item2.HasValue
+                        || value.Item1.HasValue
+                        && value.Item1.Value.Any(option =>
+                            option.Name.Equals("ANALYZE", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(option.Value, "FALSE", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(option.Value, "OFF", StringComparison.OrdinalIgnoreCase)),
+                    value.Item3.IsParenthesized));
+        }
+        else
+        {
+            explain = Fail<SqlStatement>();
+        }
+
+        var statement = explain
+            .Or(query.Then<SqlStatement>(value => value))
             .Or(insert)
             .Or(update)
             .Or(delete)
@@ -1356,6 +1482,16 @@ public static class SqlParser
             words.UnionWith(["CONNECT", "START", "NOCYCLE", "PRIOR", "CONNECT_BY_ROOT", "SIBLINGS"]);
         }
 
+        if (syntax.SupportsExplainOptions)
+        {
+            words.UnionWith(["EXPLAIN", "ANALYZE"]);
+        }
+
+        if (syntax.SupportsCreateViewSecurity)
+        {
+            words.UnionWith(["SQL", "SECURITY", "DEFINER", "INVOKER"]);
+        }
+
         if (syntax.SupportsNullOrdering)
         {
             words.UnionWith(["NULLS", "FIRST", "LAST"]);
@@ -1363,6 +1499,14 @@ public static class SqlParser
 
         return words;
     }
+
+    private sealed record ParsedDataTypeArguments(
+        IReadOnlyList<int> Arguments,
+        SqlDataTypeLengthUnit LengthUnit);
+
+    private sealed record ParsedExplainOption(string Name, string? Value);
+
+    private sealed record ParsedExplainTarget(SqlQuery Query, bool IsParenthesized);
 
     private static bool TryGetDialectCompatibilityError(
         SqlDocument document,
