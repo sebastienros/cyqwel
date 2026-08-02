@@ -1,0 +1,55 @@
+using Cyqwel.Dialects;
+
+namespace Cyqwel.Tests;
+
+// Regenerated through Polyglot at 7c4f1f2 from SQLGlot v30.12.0; PostgreSQL cases are a supported static subset.
+public partial class DialectIdentityFixtureTests
+{
+    [InlineData("postgres-identity-2", "SELECT GET_BIT(CAST(44 AS BIT(10)), 6)")]
+    [InlineData("postgres-identity-3", "SELECT * FROM t GROUP BY ROLLUP (a || '^' || b)")]
+    [InlineData("postgres-identity-4", "SELECT COSH(1.5)")]
+    [InlineData("postgres-identity-5", "SELECT EXP(1)")]
+    [InlineData("postgres-identity-6", "SELECT MODE() WITHIN GROUP (ORDER BY status DESC) AS most_common FROM orders")]
+    [InlineData("postgres-identity-7", "SELECT ST_DISTANCE(gg1, gg2, FALSE) AS sphere_dist")]
+    [InlineData("postgres-identity-12", "SELECT EXTRACT(QUARTER FROM CAST('2025-04-26' AS DATE))")]
+    [InlineData("postgres-identity-13", "SELECT DATE_TRUNC('QUARTER', CAST('2025-04-26' AS DATE))")]
+    [InlineData("postgres-identity-15", "SELECT x FROM t WHERE CAST($1 AS TEXT) = 'ok'")]
+    [InlineData("postgres-identity-44", "SELECT CASE WHEN SUBSTRING('abcdefg') IN ('ab') THEN 1 ELSE 0 END")]
+    [InlineData("postgres-identity-59", "SELECT ~x")]
+    [InlineData("postgres-identity-65", "SELECT CURRENT_SCHEMA")]
+    [InlineData("postgres-identity-66", "SELECT CURRENT_USER")]
+    [InlineData("postgres-identity-67", "SELECT CURRENT_ROLE")]
+    [InlineData("postgres-identity-68", "SELECT VERSION()")]
+    [InlineData("postgres-identity-78", "SELECT date_col - INTERVAL '30' DAY FROM t")]
+    [InlineData("postgres-identity-79", "SELECT date_col - INTERVAL '1' HOUR AS one_hour_later")]
+    [InlineData("postgres-identity-86", "WITH t1 AS MATERIALIZED (SELECT 1), t2 AS NOT MATERIALIZED (SELECT 2) SELECT * FROM t1, t2")]
+    [InlineData("postgres-identity-99", "SELECT TO_TIMESTAMP(1284352323.5), TO_TIMESTAMP('05 Dec 2000', 'DD Mon YYYY')")]
+    [InlineData("postgres-identity-100", "SELECT TO_TIMESTAMP('05 Dec 2000 10:00 AM', 'DD Mon YYYY HH:MI AM')")]
+    [InlineData("postgres-identity-101", "SELECT TO_TIMESTAMP('05 Dec 2000 10:00 PM', 'DD Mon YYYY HH:MI PM')")]
+    [InlineData("postgres-identity-104", "SELECT date_add(current_date, interval '7' day)")]
+    [InlineData("postgres-identity-119", "UPDATE MYTABLE T1 SET T1.COL = 13")]
+    [InlineData("postgres-identity-150", "SELECT SUM(x) OVER (PARTITION BY a ORDER BY d ROWS 1 PRECEDING)")]
+    [InlineData("postgres-identity-186", "/*+ some comment*/ SELECT b.foo, b.bar FROM baz AS b")]
+    [InlineData("postgres-identity-194", "SELECT JSON_AGG(DISTINCT name) FROM users")]
+    [InlineData("postgres-identity-215", "CREATE TABLE public.y (x TSTZRANGE NOT NULL)")]
+    [InlineData("postgres-identity-216", "CREATE TABLE test (foo HSTORE)")]
+    [InlineData("postgres-identity-217", "CREATE TABLE test (foo JSONB)")]
+    [InlineData("postgres-identity-220", "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING a")]
+    [InlineData("postgres-identity-221", "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING a, b")]
+    [InlineData("postgres-identity-222", "INSERT INTO x VALUES (1, 'a', 2.0) RETURNING *")]
+    [InlineData("postgres-identity-223", "UPDATE tbl_name SET foo = 123 RETURNING a")]
+    [InlineData("postgres-identity-230", "TRUNCATE TABLE t1 CASCADE")]
+    [InlineData("postgres-identity-265", "DELETE FROM event USING sales AS s WHERE event.eventid = s.eventid RETURNING a")]
+    [InlineData("postgres-identity-274", "ALTER TABLE foo ADD COLUMN id BIGINT NOT NULL PRIMARY KEY DEFAULT 1, ADD CONSTRAINT fk_orders_user FOREIGN KEY (id) REFERENCES foo (id)")]
+    [InlineData("postgres-identity-295", "CREATE TABLE products (product_no INT UNIQUE, name TEXT, price DECIMAL)")]
+    [InlineData("postgres-identity-297", "CREATE TABLE products (product_no INT, name TEXT, price DECIMAL, UNIQUE (product_no, name))")]
+    [InlineData("postgres-identity-303", "CREATE TABLE tbl (col UUID UNIQUE DEFAULT GEN_RANDOM_UUID())")]
+    [InlineData("postgres-identity-305", "CREATE TABLE tbl (col_a INT GENERATED ALWAYS AS (1 + 2) STORED)")]
+    [InlineData("postgres-identity-309", "DROP INDEX ix_table_id")]
+    [InlineData("postgres-identity-310", "DROP INDEX IF EXISTS ix_table_id")]
+    [InlineData("postgres-identity-317", "SELECT CONCAT('abcde', 2, NULL, 22)")]
+    [InlineData("postgres-identity-341", "CREATE TABLE foo (data XML)")]
+    [Theory]
+    public void PostgreSql_parse_generate_parse_is_stable(string caseName, string sql) =>
+        AssertStable(SqlDialects.PostgreSql, caseName, sql);
+}
