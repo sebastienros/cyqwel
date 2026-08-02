@@ -1,0 +1,98 @@
+# Cyqwel
+
+Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutable C# AST, traverses or rewrites that tree, generates SQL for another dialect, and builds queries without concatenating SQL strings.
+
+## Features
+
+- Shared AST for Generic SQL, T-SQL, SQLite, PostgreSQL, and MySQL
+- Reusable, compiled [Parlot](https://github.com/sebastienros/parlot) parser graphs cached by dialect configuration
+- Strict dialect parsing with distinct quote, parameter, operator, clause, and DML rules
+- Read-only visitor, non-mutating rewriter, depth-first and breadth-first traversal
+- Dialect-aware generation and transpilation
+- Public dialect base class, registry, and fluent custom dialect builder
+- Fluent SELECT, set-operation, INSERT, UPDATE, DELETE, CASE, and expression builders
+- Input and AST complexity guards
+- Pooled SQL generation buffers
+
+## Parse, inspect, and generate
+
+```csharp
+using Cyqwel.Dialects;
+using Cyqwel.Visitors;
+
+var document = SqlDialects.TSql.Parse(
+    "SELECT TOP 10 [display name] FROM [users]");
+
+var columns = document.GetColumnNames();
+var postgres = SqlDialects.PostgreSql.Generate(document);
+// SELECT "display name" FROM "users" LIMIT 10
+```
+
+`SqlParser.TryParse` returns a structured `SqlParseError` when input is invalid. `SqlParseOptions` controls maximum input length and AST node count.
+
+Dialect entry points enforce source compatibility:
+
+```csharp
+SqlDialects.TSql.Parse("SELECT TOP 10 [id] FROM [users]"); // accepted
+SqlDialects.PostgreSql.Parse("SELECT TOP 10 id FROM users"); // throws SqlParseException
+```
+
+An otherwise recognized construct that is incompatible with the selected dialect returns `SqlParseErrorCode.DialectIncompatible`. Dialect selection also resolves ambiguous syntax in the source AST; for example, `||` becomes concatenation in PostgreSQL and SQLite but logical `OR` in MySQL.
+
+## Build SQL
+
+```csharp
+using Cyqwel;
+using Cyqwel.Dialects;
+
+var query = Sql.Select("u.id", "u.name")
+    .From("users", "u")
+    .Where(Sql.Col("u.age").GreaterThan(Sql.Lit(18)))
+    .OrderBy(Sql.Col("u.name"))
+    .Limit(10)
+    .Build();
+
+var sql = query.ToSql(SqlDialects.PostgreSql);
+```
+
+Builders produce the same AST types as the parser and contain no dialect-specific logic.
+
+## Traverse and transform
+
+Derive from `SqlVisitor` for read-only analysis or `SqlRewriter` for bottom-up, non-mutating transformations. Unchanged subtrees retain their original object references.
+
+```csharp
+using Cyqwel.Ast;
+using Cyqwel.Visitors;
+
+sealed class ParameterRewriter : SqlRewriter
+{
+    protected override SqlNode VisitLiteral(LiteralExpression node) =>
+        node.Value is string ? new ParameterExpression("value") : node;
+}
+
+var rewritten = query.Accept(new ParameterRewriter());
+```
+
+`DescendantsAndSelf`, `BreadthFirst`, `FindAll<T>`, `GetTableNames`, and `GetColumnNames` provide efficient tree inspection. Convenience transforms include `AddWhere`, `SetLimit`, `RenameTable`, and `RenameColumn`.
+
+## Extend dialects
+
+Subclass `SqlDialect` for full control, or compose a dialect:
+
+```csharp
+var warehouse = SqlDialectBuilder.Create("warehouse")
+    .BasedOn(SqlDialects.PostgreSql)
+    .WithFunctionNameTransform(name => name == "LEN" ? "LENGTH" : name)
+    .ConfigureParser(options => options with
+    {
+        IdentifierQuotes = options.IdentifierQuotes | SqlIdentifierQuoteStyle.Backtick,
+    })
+    .Register();
+```
+
+Custom dialects inherit the base dialect's parser configuration and can modify only the required rules. Built-in aliases such as `mssql`, `sqlserver`, and `postgres` are available through `SqlDialectRegistry`.
+
+## Supported SQL surface
+
+Cyqwel currently handles SELECT projections and aliases, joins, predicates, grouping, ordering, row limits, CTEs, set operations, INSERT VALUES/SELECT, UPDATE, DELETE, RETURNING, functions, CASE, CAST, subqueries, parameters, and common unary and binary operators. The AST and dialect hooks are designed to add syntax without coupling transformations to a specific parser or generator.
