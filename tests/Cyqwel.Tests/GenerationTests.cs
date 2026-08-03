@@ -43,6 +43,26 @@ public class GenerationTests
     }
 
     [Fact]
+    public void Generates_trim_direction_and_set_statements()
+    {
+        var trimDocument = SqlParser.Parse("SELECT TRIM(LEADING FROM name) FROM users");
+        var setDocument = SqlParser.Parse("SET LOCAL SESSION AUTHORIZATION abluva");
+
+        Assert.Equal("SELECT TRIM(LEADING FROM name) FROM users", trimDocument.ToSql());
+        Assert.Equal("SET LOCAL SESSION AUTHORIZATION abluva", setDocument.ToSql());
+    }
+
+    [Fact]
+    public void Generates_mysql_functional_index_table_elements()
+    {
+        var document = SqlParser.Parse("CREATE TABLE events (id INT, KEY idx_clean_batch ((TRIM(BOTH '0' FROM batch_no))))");
+
+        Assert.Equal(
+            "CREATE TABLE events (id INT, KEY idx_clean_batch ((TRIM('0' FROM batch_no))))",
+            document.ToSql());
+    }
+
+    [Fact]
     public void Generates_tsql_top_and_offset_fetch()
     {
         var top = Sql.Select("id").From("users").Limit(10).Build();

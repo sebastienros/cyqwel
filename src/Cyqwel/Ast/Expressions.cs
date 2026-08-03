@@ -28,6 +28,24 @@ public sealed record StarExpression(IReadOnlyList<SqlIdentifier>? Qualifier = nu
 
 public sealed record LiteralExpression(object? Value) : SqlExpression;
 
+public enum TrimDirection
+{
+    Leading,
+    Trailing,
+    Both,
+}
+
+public sealed record TrimExpression(
+    TrimDirection Direction,
+    SqlExpression? Character,
+    SqlExpression Source) : SqlExpression;
+
+public sealed record TypedLiteralExpression(
+    SqlIdentifier TypeName,
+    SqlExpression Value) : SqlExpression;
+
+public sealed record HexLiteralExpression(string Value) : SqlExpression;
+
 public sealed record ParameterExpression(
     string Name,
     char Prefix = '@',

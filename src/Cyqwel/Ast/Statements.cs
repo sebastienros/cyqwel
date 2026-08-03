@@ -81,3 +81,11 @@ public sealed record MergeStatement(
     IReadOnlyList<MergeWhenClause> WhenClauses,
     IReadOnlyList<SqlExpression>? Returning = null,
     IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement;
+
+public sealed record GrantStatement(
+    IReadOnlyList<SqlIdentifier> Objects,
+    IReadOnlyList<SqlIdentifier> Grantees) : SqlStatement;
+
+public sealed record SetStatement(
+    IReadOnlyList<SqlIdentifier> Keywords,
+    IReadOnlyList<SqlNode> Arguments) : SqlStatement;

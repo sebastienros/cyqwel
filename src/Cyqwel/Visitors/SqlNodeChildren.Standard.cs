@@ -93,6 +93,12 @@ internal static partial class SqlNodeChildren
         if (node.GeneratedExpression is not null) yield return node.GeneratedExpression;
     }
 
+    private static IEnumerable<SqlNode> IndexTableElementChildren(IndexTableElement node)
+    {
+        if (node.Name is not null) yield return node.Name;
+        foreach (var column in node.Columns) yield return column;
+    }
+
     private static IEnumerable<SqlNode> ConstraintChildren(
         SqlIdentifier? name,
         IReadOnlyList<SqlIdentifier> columns)

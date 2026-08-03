@@ -32,6 +32,7 @@ public abstract partial class SqlVisitor
     protected virtual void VisitMergeInsert(MergeInsertAction node) => DefaultVisit(node);
     protected virtual void VisitMergeDelete(MergeDeleteAction node) => DefaultVisit(node);
     protected virtual void VisitColumnDefinition(ColumnDefinition node) => DefaultVisit(node);
+    protected virtual void VisitIndexTableElement(IndexTableElement node) => DefaultVisit(node);
     protected virtual void VisitPrimaryKeyConstraint(PrimaryKeyConstraint node) => DefaultVisit(node);
     protected virtual void VisitUniqueConstraint(UniqueConstraint node) => DefaultVisit(node);
     protected virtual void VisitForeignKeyConstraint(ForeignKeyConstraint node) => DefaultVisit(node);

@@ -50,6 +50,8 @@ public sealed partial class SqlGenerator
             case UpdateStatement value: WriteUpdate(value); break;
             case DeleteStatement value: WriteDelete(value); break;
             case MergeStatement value: WriteMerge(value); break;
+            case GrantStatement value: WriteGrant(value); break;
+            case SetStatement value: WriteSet(value); break;
             case CreateTableStatement value: WriteCreateTable(value); break;
             case AlterTableStatement value: WriteAlterTable(value); break;
             case DropStatement value: WriteDrop(value); break;
@@ -361,6 +363,29 @@ public sealed partial class SqlGenerator
         WriteReturning(update.Returning, update.ReturningInto);
     }
 
+    private void WriteGrant(GrantStatement grant)
+    {
+        Keyword("GRANT");
+        Space();
+        WriteSeparated(grant.Objects, WriteIdentifier);
+        Space();
+        Keyword("TO");
+        Space();
+        WriteSeparated(grant.Grantees, WriteIdentifier);
+    }
+
+    private void WriteSet(SetStatement set)
+    {
+        Keyword("SET");
+        Space();
+        WriteSeparated(set.Keywords, WriteIdentifier, " ");
+        foreach (var argument in set.Arguments)
+        {
+            Space();
+            WriteSetArgument(argument);
+        }
+    }
+
     private void WriteDelete(DeleteStatement delete)
     {
         Keyword("DELETE FROM");
@@ -628,6 +653,8 @@ public sealed partial class SqlGenerator
                     JoinKind.Right => "RIGHT JOIN",
                     JoinKind.Full => "FULL JOIN",
                     JoinKind.Cross => "CROSS JOIN",
+                    JoinKind.OuterApply => "OUTER APPLY",
+                    JoinKind.CrossApply => "CROSS APPLY",
                     _ => throw new ArgumentOutOfRangeException(),
                 });
                 Space();
@@ -691,6 +718,17 @@ public sealed partial class SqlGenerator
                 break;
             case LiteralExpression literal:
                 WriteLiteral(literal);
+                break;
+            case TrimExpression trim:
+                WriteTrim(trim);
+                break;
+            case TypedLiteralExpression typed:
+                WriteIdentifier(typed.TypeName);
+                Space();
+                WriteExpression(typed.Value);
+                break;
+            case HexLiteralExpression hex:
+                _builder.Append(hex.Value);
                 break;
             case ParameterExpression parameter:
                 WriteParameter(parameter);
@@ -1143,6 +1181,50 @@ public sealed partial class SqlGenerator
         }
 
         _builder.Append(parameter.Prefix).Append(parameter.Name);
+    }
+
+    private void WriteTrim(TrimExpression trim)
+    {
+        Keyword("TRIM");
+        _builder.Append('(');
+        if (trim.Direction != TrimDirection.Both)
+        {
+            Keyword(trim.Direction == TrimDirection.Leading ? "LEADING" : "TRAILING");
+            Space();
+        }
+
+        if (trim.Character is not null || trim.Direction != TrimDirection.Both)
+        {
+            if (trim.Character is not null)
+            {
+                WriteExpression(trim.Character);
+                Space();
+            }
+
+            Keyword("FROM");
+            Space();
+        }
+
+        WriteExpression(trim.Source);
+        _builder.Append(')');
+    }
+
+    private void WriteSetArgument(SqlNode node)
+    {
+        switch (node)
+        {
+            case SqlIdentifier identifier:
+                WriteIdentifier(identifier);
+                break;
+            case TableName tableName:
+                WriteTableName(tableName);
+                break;
+            case SqlExpression expression:
+                WriteExpression(expression);
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported set argument '{node.GetType().Name}'.");
+        }
     }
 
     private void WriteLiteral(LiteralExpression literal)

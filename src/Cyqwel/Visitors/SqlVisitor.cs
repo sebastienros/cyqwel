@@ -22,6 +22,8 @@ public abstract partial class SqlVisitor
             case UpdateStatement value: VisitUpdate(value); break;
             case DeleteStatement value: VisitDelete(value); break;
             case MergeStatement value: VisitMerge(value); break;
+            case GrantStatement value: VisitGrant(value); break;
+            case SetStatement value: VisitSet(value); break;
             case CreateTableStatement value: VisitCreateTable(value); break;
             case AlterTableStatement value: VisitAlterTable(value); break;
             case DropStatement value: VisitDrop(value); break;
@@ -34,6 +36,9 @@ public abstract partial class SqlVisitor
             case ColumnExpression value: VisitColumn(value); break;
             case StarExpression value: VisitStar(value); break;
             case LiteralExpression value: VisitLiteral(value); break;
+            case TrimExpression value: VisitTrim(value); break;
+            case TypedLiteralExpression value: VisitTypedLiteral(value); break;
+            case HexLiteralExpression value: VisitHexLiteral(value); break;
             case ParameterExpression value: VisitParameter(value); break;
             case ParenthesizedExpression value: VisitParenthesized(value); break;
             case UnaryExpression value: VisitUnary(value); break;
@@ -75,6 +80,7 @@ public abstract partial class SqlVisitor
             case MergeInsertAction value: VisitMergeInsert(value); break;
             case MergeDeleteAction value: VisitMergeDelete(value); break;
             case ColumnDefinition value: VisitColumnDefinition(value); break;
+            case IndexTableElement value: VisitIndexTableElement(value); break;
             case PrimaryKeyConstraint value: VisitPrimaryKeyConstraint(value); break;
             case UniqueConstraint value: VisitUniqueConstraint(value); break;
             case ForeignKeyConstraint value: VisitForeignKeyConstraint(value); break;
@@ -107,10 +113,15 @@ public abstract partial class SqlVisitor
     protected virtual void VisitInsert(InsertStatement node) => DefaultVisit(node);
     protected virtual void VisitUpdate(UpdateStatement node) => DefaultVisit(node);
     protected virtual void VisitDelete(DeleteStatement node) => DefaultVisit(node);
+    protected virtual void VisitGrant(GrantStatement node) => DefaultVisit(node);
+    protected virtual void VisitSet(SetStatement node) => DefaultVisit(node);
     protected virtual void VisitIdentifier(SqlIdentifier node) => DefaultVisit(node);
     protected virtual void VisitColumn(ColumnExpression node) => DefaultVisit(node);
     protected virtual void VisitStar(StarExpression node) => DefaultVisit(node);
     protected virtual void VisitLiteral(LiteralExpression node) => DefaultVisit(node);
+    protected virtual void VisitTrim(TrimExpression node) => DefaultVisit(node);
+    protected virtual void VisitTypedLiteral(TypedLiteralExpression node) => DefaultVisit(node);
+    protected virtual void VisitHexLiteral(HexLiteralExpression node) => DefaultVisit(node);
     protected virtual void VisitParameter(ParameterExpression node) => DefaultVisit(node);
     protected virtual void VisitParenthesized(ParenthesizedExpression node) => DefaultVisit(node);
     protected virtual void VisitUnary(UnaryExpression node) => DefaultVisit(node);

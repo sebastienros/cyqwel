@@ -177,6 +177,17 @@ public static class SqlParser
         var ZONE = Keyword("ZONE");
         var LONG = Keyword("LONG");
         var RAW = Keyword("RAW");
+        var GRANT = Keyword("GRANT");
+        var SESSION = Keyword("SESSION");
+        var AUTHORIZATION = Keyword("AUTHORIZATION");
+        var IDENTITY_INSERT = Keyword("IDENTITY_INSERT");
+        var STATISTICS = Keyword("STATISTICS");
+        var TRIM = Keyword("TRIM");
+        var LEADING = Keyword("LEADING");
+        var TRAILING = Keyword("TRAILING");
+        var BOTH = Keyword("BOTH");
+        var APPLY = Keyword("APPLY");
+        var TIMESTAMPTZ = Keyword("TIMESTAMPTZ");
 
         var reservedWords = CreateReservedWords(syntax);
 
@@ -208,9 +219,11 @@ public static class SqlParser
         identifierParsers.Add(unquotedIdentifier);
         var simpleIdentifier = OneOf(identifierParsers.ToArray());
         var nonKeywordIdentifier = simpleIdentifier;
+        var tableIdentifier = simpleIdentifier.Or(TABLE.Then(new SqlIdentifier("TABLE")));
         var identifierParts = Separated(dot, simpleIdentifier);
+        var tableIdentifierParts = Separated(dot, tableIdentifier);
 
-        var tableName = identifierParts.Then(parts => new TableName(parts));
+        var tableName = tableIdentifierParts.Then(parts => new TableName(parts));
         var column = identifierParts.Then<SqlExpression>(parts =>
         {
             if (parts.Count > 1
@@ -414,6 +427,31 @@ public static class SqlParser
         var starExpression = star.Then<SqlExpression>(new StarExpression());
 
         var defaultExpression = DEFAULT.Then<SqlExpression>(new DefaultExpression());
+        var stringLiteralWithIntroducer = simpleIdentifier
+            .And(text)
+            .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value.Item2).Value));
+        var typedLiteral = TIMESTAMPTZ.SkipAnd(text)
+            .Then<SqlExpression>(value => new TypedLiteralExpression(new SqlIdentifier("TIMESTAMPTZ"), value));
+        var hexLiteral = Terms.Text("0x")
+            .Or(Terms.Text("0X"))
+            .Then(value => value.ToString())
+            .And(Literals.AnyOf(Character.HexDigits, 1, int.MaxValue)
+                .Then(span => span.ToString()))
+            .Then<SqlExpression>(value => new HexLiteralExpression($"{value.Item1}{value.Item2}"));
+        var trimSpecial = TRIM.SkipAnd(leftParenthesis)
+            .And(LEADING.Then(TrimDirection.Leading)
+                .Or(TRAILING.Then(TrimDirection.Trailing))
+                .Or(BOTH.Then(TrimDirection.Both))
+                .Optional())
+            .And(stringLiteralWithIntroducer.Or(expression).Optional())
+            .AndSkip(FROM)
+            .And(expression)
+            .AndSkip(rightParenthesis)
+            .Then<SqlExpression>(value => new TrimExpression(
+                value.Item2.HasValue ? value.Item2.Value : TrimDirection.Both,
+                value.Item3.HasValue ? value.Item3.Value : null,
+                value.Item4));
+        var trim = trimSpecial.Or(function);
         var term = tryCast
             .Or(cast)
             .Or(extract)
@@ -421,7 +459,7 @@ public static class SqlParser
             .Or(caseExpression)
             .Or(exists)
             .Or(subquery)
-            .Or(function)
+            .Or(trim)
             .Or(row)
             .Or(grouped)
             .Or(qualifiedStar)
@@ -430,6 +468,8 @@ public static class SqlParser
             .Or(boolean)
             .Or(nullLiteral)
             .Or(defaultExpression)
+            .Or(typedLiteral)
+            .Or(hexLiteral)
             .Or(text)
             .Or(number)
             .Or(column);
@@ -635,15 +675,16 @@ public static class SqlParser
                 null));
         windowSpecification.Parser = namedWindowSpecification.Or(anonymousWindowSpecification);
 
-        var alias = AS.SkipAnd(simpleIdentifier).Or(nonKeywordIdentifier);
+        var stringAlias = text.Then(value => new SqlIdentifier(((LiteralExpression)value).Value?.ToString() ?? string.Empty));
+        var alias = AS.SkipAnd(simpleIdentifier.Or(stringAlias)).Or(nonKeywordIdentifier.Or(stringAlias));
         var tableAlias = syntax.SupportsTableAliasAs
             ? alias
-            : nonKeywordIdentifier;
+            : nonKeywordIdentifier.Or(stringAlias);
         var selectItem = expression.And(alias.Optional())
             .Then(value => new SelectItem(
                 value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : null));
-        var projections = Separated(comma, selectItem);
+                value.Item2.HasValue ? (SqlIdentifier?)value.Item2.Value : null));
+        var projections = Separated<char, SelectItem>(comma, selectItem);
 
         var derivedTable = Between(leftParenthesis, query, rightParenthesis)
             .And(tableAlias)
@@ -651,13 +692,15 @@ public static class SqlParser
         var namedTable = tableName.And(tableAlias.Optional())
             .Then<TableSource>(value => new NamedTable(
                 value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : null));
+                value.Item2.HasValue ? (SqlIdentifier?)value.Item2.Value : null));
         var tablePrimary = derivedTable.Or(namedTable);
 
         var joinKind = LEFT.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Left)
             .Or(RIGHT.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Right))
             .Or(FULL.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Full))
             .Or(CROSS.AndSkip(JOIN).Then(JoinKind.Cross))
+            .Or(CROSS.AndSkip(APPLY).Then(JoinKind.CrossApply))
+            .Or(OUTER.AndSkip(APPLY).Then(JoinKind.OuterApply))
             .Or(INNER.AndSkip(JOIN).Then(JoinKind.Inner))
             .Or(JOIN.Then(JoinKind.Inner));
         var joinCondition = ON.SkipAnd(expression)
@@ -885,6 +928,37 @@ public static class SqlParser
                 .Then<ParsedReturning?>(value => value)
                 .Or(Always<ParsedReturning?>(null))
             : Always<ParsedReturning?>(null);
+        var grant = GRANT.SkipAnd(Separated(comma, simpleIdentifier))
+            .AndSkip(TO)
+            .And(Separated(comma, simpleIdentifier))
+            .Then<SqlStatement>(value => new GrantStatement(value.Item1, value.Item2));
+        var setSessionAuthorization = SET
+            .And(LOCAL.Optional())
+            .Then(value => new ParsedSetSessionAuthorizationState(value.Item2.HasValue))
+            .And(SESSION)
+            .Then(value => new ParsedSetSessionAuthorizationState(value.Item1.HasLocal))
+            .And(AUTHORIZATION)
+            .Then(value => new ParsedSetSessionAuthorizationState(value.Item1.HasLocal))
+            .And(simpleIdentifier)
+            .Then<SqlStatement>(value => new SetStatement(
+                value.Item1.HasLocal
+                    ? [new SqlIdentifier("LOCAL"), new SqlIdentifier("SESSION"), new SqlIdentifier("AUTHORIZATION")]
+                    : [new SqlIdentifier("SESSION"), new SqlIdentifier("AUTHORIZATION")],
+                [value.Item2]));
+        var setIdentityInsert = SET.SkipAnd(IDENTITY_INSERT)
+            .And(tableName)
+            .Then(value => new ParsedSetIdentityInsertState(value.Item2))
+            .And(ON.Then(new SqlIdentifier("ON")).Or(OFF.Then(new SqlIdentifier("OFF"))))
+            .Then<SqlStatement>(value => new SetStatement(
+                [new SqlIdentifier("IDENTITY_INSERT")],
+                [value.Item1.TableName, value.Item2]));
+        var setStatistics = SET.SkipAnd(STATISTICS)
+            .And(TIME.Then(new SqlIdentifier("TIME")))
+            .Then(value => new ParsedSetStatisticsState(value.Item2))
+            .And(ON.Then(new SqlIdentifier("ON")).Or(OFF.Then(new SqlIdentifier("OFF"))))
+            .Then<SqlStatement>(value => new SetStatement(
+                [new SqlIdentifier("STATISTICS"), value.Item1.Time],
+                [value.Item2]));
         var insertColumns = Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis);
         var insertValues = VALUES.SkipAnd(Separated(comma, valueRow));
         var insert = INSERT.SkipAnd(INTO)
@@ -1064,6 +1138,11 @@ public static class SqlParser
                     isUnique);
             });
 
+        var indexColumn = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
+            .Then(value => new IndexColumn(
+                value.Item1,
+                value.Item2.HasValue ? value.Item2.Value : OrderDirection.Unspecified,
+                value.Item3.HasValue ? value.Item3.Value : NullOrder.Unspecified));
         var identifierList = Between(
             leftParenthesis,
             Separated(comma, simpleIdentifier),
@@ -1105,11 +1184,22 @@ public static class SqlParser
             .Then<TableConstraint>(value => new CheckConstraint(
                 value.Item2,
                 value.Item1.HasValue ? value.Item1.Value : null));
+        var indexTableElement = constraintName
+            .And(UNIQUE.Optional())
+            .And(KEY.Then(true).Or(INDEX.Then(false)))
+            .And(simpleIdentifier.Optional())
+            .And(Between(leftParenthesis, Separated(comma, indexColumn), rightParenthesis))
+            .Then<TableElement>(value => new IndexTableElement(
+                value.Item4.HasValue ? value.Item4.Value : null,
+                value.Item5,
+                value.Item2.HasValue,
+                value.Item3));
         var tableConstraint = primaryKeyConstraint
             .Or(uniqueConstraint)
             .Or(foreignKeyConstraint)
             .Or(checkConstraint);
-        var tableElement = tableConstraint.Then<TableElement>(value => value)
+        var tableElement = indexTableElement
+            .Or(tableConstraint.Then<TableElement>(value => value))
             .Or(columnDefinition.Then<TableElement>(value => value));
         var tableElements = Between(
             leftParenthesis,
@@ -1157,11 +1247,6 @@ public static class SqlParser
                 value.Item2.HasValue,
                 value.Item3.HasValue ? value.Item3.Value : null));
 
-        var indexColumn = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
-            .Then(value => new IndexColumn(
-                value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : OrderDirection.Unspecified,
-                value.Item3.HasValue ? value.Item3.Value : NullOrder.Unspecified));
         var createIndex = CREATE.SkipAnd(UNIQUE.Optional())
             .AndSkip(INDEX)
             .And(ifNotExists)
@@ -1346,8 +1431,13 @@ public static class SqlParser
             explain = Fail<SqlStatement>();
         }
 
+        var setStatement = setSessionAuthorization
+            .Or(setIdentityInsert)
+            .Or(setStatistics);
         var statement = explain
             .Or(query.Then<SqlStatement>(value => value))
+            .Or(grant)
+            .Or(setStatement)
             .Or(insert)
             .Or(update)
             .Or(delete)
@@ -1360,7 +1450,7 @@ public static class SqlParser
             .Or(alterTable)
             .Or(dropStatement)
             .Or(truncateStatement);
-        var document = Separated(semicolon, statement)
+        var document = Separated<char, SqlStatement>(semicolon, statement)
             .AndSkip(semicolon.Optional())
             .Then(statements => new SqlDocument(statements))
             .AndSkip(Terms.WhiteSpace().Optional())
@@ -1536,6 +1626,14 @@ public static class SqlParser
 
         return words;
     }
+
+    private readonly record struct ParsedHexLiteralState(char Prefix, object? Value);
+
+    private readonly record struct ParsedSetSessionAuthorizationState(bool HasLocal);
+
+    private readonly record struct ParsedSetIdentityInsertState(TableName TableName);
+
+    private readonly record struct ParsedSetStatisticsState(SqlIdentifier Time);
 
     private sealed record ParsedDataTypeArguments(
         IReadOnlyList<int> Arguments,
