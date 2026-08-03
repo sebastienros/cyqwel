@@ -33,6 +33,8 @@ public enum JoinKind
     Right,
     Full,
     Cross,
+    OuterApply,
+    CrossApply,
 }
 
 public enum JoinSyntax

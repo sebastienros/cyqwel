@@ -105,6 +105,84 @@ public class ParserTests
     }
 
     [Fact]
+    public void Parses_grant_and_set_statements()
+    {
+        var document = SqlParser.Parse("GRANT abluva TO \"kk8529p@abluva.com\"; SET LOCAL SESSION AUTHORIZATION abluva; SET IDENTITY_INSERT dbo.Employees ON; SET STATISTICS TIME ON;");
+        var statements = document.Statements;
+ 
+        Assert.Collection(
+            statements,
+            statement =>
+            {
+                var grant = Assert.IsType<GrantStatement>(statement);
+                Assert.Equal("abluva", grant.Objects[0].Value);
+                Assert.Equal("kk8529p@abluva.com", grant.Grantees[0].Value);
+            },
+            statement =>
+            {
+                var set = Assert.IsType<SetStatement>(statement);
+                Assert.Equal("SESSION", set.Keywords[1].Value);
+                Assert.Equal("AUTHORIZATION", set.Keywords[2].Value);
+            },
+            statement =>
+            {
+                var set = Assert.IsType<SetStatement>(statement);
+                Assert.Equal("IDENTITY_INSERT", set.Keywords[0].Value);
+                var tableName = Assert.IsType<TableName>(set.Arguments[0]);
+                Assert.Equal("dbo", tableName.Parts[0].Value);
+                Assert.Equal("Employees", tableName.Parts[1].Value);
+                Assert.Equal("ON", Assert.IsType<SqlIdentifier>(set.Arguments[1]).Value);
+            },
+            statement =>
+            {
+                var set = Assert.IsType<SetStatement>(statement);
+                Assert.Equal("STATISTICS", set.Keywords[0].Value);
+                Assert.Equal("TIME", Assert.IsType<SqlIdentifier>(set.Keywords[1]).Value);
+                Assert.Equal("ON", Assert.IsType<SqlIdentifier>(set.Arguments[0]).Value);
+            });
+    }
+
+    [Fact]
+    public void Parses_apply_joins_and_special_expressions()
+    {
+        var document = SqlParser.Parse("SELECT trim(leading _utf8mb4'0' from batch_no), TIMESTAMPTZ '2026-04-10T00:00:00+00:00', 0x1 FROM events");
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+        var trim = Assert.IsType<TrimExpression>(Assert.IsType<SelectItem>(select.Projections[0]).Expression);
+        var typedLiteral = Assert.IsType<TypedLiteralExpression>(Assert.IsType<SelectItem>(select.Projections[1]).Expression);
+        var hexLiteral = Assert.IsType<HexLiteralExpression>(Assert.IsType<SelectItem>(select.Projections[2]).Expression);
+  
+        Assert.Equal(TrimDirection.Leading, trim.Direction);
+        Assert.Equal("0", Assert.IsType<string>(((LiteralExpression)trim.Character!).Value));
+        Assert.Equal("TIMESTAMPTZ", typedLiteral.TypeName.Value);
+        Assert.Equal("0x1", hexLiteral.Value);
+    }
+
+    [Fact]
+    public void Parses_mysql_functional_index_table_elements()
+    {
+        const string sql = "CREATE TABLE events (id INT, KEY idx_clean_batch ((TRIM(BOTH '0' FROM batch_no))))";
+        var document = SqlParser.Parse(sql);
+        var createTable = Assert.IsType<CreateTableStatement>(Assert.Single(document.Statements));
+        var index = Assert.Single(createTable.Elements.OfType<IndexTableElement>());
+        var column = Assert.Single(index.Columns);
+        var expression = Assert.IsType<ParenthesizedExpression>(column.Expression);
+        var trim = Assert.IsType<TrimExpression>(expression.Expression);
+
+        Assert.Equal("idx_clean_batch", index.Name!.Value);
+        Assert.Equal(TrimDirection.Both, trim.Direction);
+        Assert.Equal("0", Assert.IsType<string>(((LiteralExpression)trim.Character!).Value));
+    }
+
+    [Fact]
+    public void Rewriter_visits_grant_and_set_statements()
+    {
+        var document = SqlParser.Parse("GRANT abluva TO user; SET LOCAL SESSION AUTHORIZATION abluva");
+        var rewritten = new IdentityRewriter().Visit(document);
+
+        Assert.IsType<SqlDocument>(rewritten);
+    }
+
+    [Fact]
     public void Parses_window_functions_and_parameter_defaults()
     {
         var dialect = CreateParameterDefaultDialect();
@@ -458,4 +536,6 @@ public class ParserTests
         SqlDialectBuilder.Create($"parameter-defaults-{Guid.NewGuid():N}")
             .ConfigureParser(options => options with { SupportsParameterDefaults = true })
             .Build();
+
+    private sealed class IdentityRewriter : SqlRewriter;
 }

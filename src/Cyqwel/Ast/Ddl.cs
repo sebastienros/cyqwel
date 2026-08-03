@@ -38,6 +38,12 @@ public abstract record TableConstraint : TableElement
     public SqlIdentifier? Name { get; init; }
 }
 
+public sealed record IndexTableElement(
+    SqlIdentifier? Name,
+    IReadOnlyList<IndexColumn> Columns,
+    bool IsUnique = false,
+    bool IsKey = false) : TableElement;
+
 public sealed record PrimaryKeyConstraint(
     IReadOnlyList<SqlIdentifier> Columns) : TableConstraint
 {

@@ -150,11 +150,50 @@ public sealed partial class SqlGenerator
             case ColumnDefinition column:
                 WriteColumnDefinition(column);
                 break;
+            case IndexTableElement index:
+                WriteIndexTableElement(index);
+                break;
             case TableConstraint constraint:
                 WriteTableConstraint(constraint);
                 break;
             default:
                 throw new NotSupportedException($"Unsupported table element '{element.GetType().Name}'.");
+        }
+    }
+
+    private void WriteIndexTableElement(IndexTableElement index)
+    {
+        if (index.IsUnique)
+        {
+            Keyword("UNIQUE");
+            Space();
+        }
+
+        Keyword(index.IsKey ? "KEY" : "INDEX");
+        if (index.Name is not null)
+        {
+            Space();
+            WriteIdentifier(index.Name);
+        }
+
+        _builder.Append(" (");
+        WriteSeparated(index.Columns, WriteIndexColumn);
+        _builder.Append(')');
+    }
+
+    private void WriteIndexColumn(IndexColumn column)
+    {
+        WriteExpression(column.Expression);
+        if (column.Direction != OrderDirection.Unspecified)
+        {
+            Space();
+            Keyword(column.Direction == OrderDirection.Ascending ? "ASC" : "DESC");
+        }
+
+        if (column.NullOrder != NullOrder.Unspecified)
+        {
+            Space();
+            Keyword(column.NullOrder == NullOrder.First ? "NULLS FIRST" : "NULLS LAST");
         }
     }
 

@@ -276,6 +276,16 @@ public abstract partial class SqlRewriter
                 };
     }
 
+    protected virtual SqlNode VisitIndexTableElement(IndexTableElement node)
+    {
+        var name = VisitOptional(node.Name);
+        var columns = VisitList(node.Columns);
+        return ReferenceEquals(name, node.Name)
+            && ReferenceEquals(columns, node.Columns)
+                ? node
+                : node with { Name = name, Columns = columns };
+    }
+
     protected virtual SqlNode VisitPrimaryKeyConstraint(PrimaryKeyConstraint node)
     {
         var columns = VisitList(node.Columns);

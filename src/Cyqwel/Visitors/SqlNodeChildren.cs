@@ -26,6 +26,10 @@ internal static partial class SqlNodeChildren
                 return DeleteChildren(value);
             case MergeStatement value:
                 return MergeChildren(value);
+            case GrantStatement value:
+                return GrantChildren(value);
+            case SetStatement value:
+                return SetChildren(value);
             case CreateTableStatement value:
                 return CreateTableChildren(value);
             case AlterTableStatement value:
@@ -130,6 +134,8 @@ internal static partial class SqlNodeChildren
                     : [.. value.Columns, .. value.Values];
             case ColumnDefinition value:
                 return ColumnDefinitionChildren(value);
+            case IndexTableElement value:
+                return IndexTableElementChildren(value);
             case PrimaryKeyConstraint value:
                 return ConstraintChildren(value.Name, value.Columns);
             case UniqueConstraint value:
@@ -161,6 +167,12 @@ internal static partial class SqlNodeChildren
             case DefaultExpression:
             case MergeDeleteAction:
                 return Array.Empty<SqlNode>();
+            case TrimExpression value:
+                return TrimChildren(value);
+            case TypedLiteralExpression value:
+                return TypedLiteralChildren(value);
+            case HexLiteralExpression value:
+                return HexLiteralChildren(value);
             case ParameterExpression value:
                 return value.DefaultValue is null
                     ? Array.Empty<SqlNode>()
@@ -353,5 +365,31 @@ internal static partial class SqlNodeChildren
         {
             foreach (var column in node.Using) yield return column;
         }
+    }
+
+    private static IEnumerable<SqlNode> TrimChildren(TrimExpression node)
+    {
+        if (node.Character is not null) yield return node.Character;
+        yield return node.Source;
+    }
+
+    private static IEnumerable<SqlNode> TypedLiteralChildren(TypedLiteralExpression node)
+    {
+        yield return node.TypeName;
+        yield return node.Value;
+    }
+
+    private static IEnumerable<SqlNode> HexLiteralChildren(HexLiteralExpression node) => Array.Empty<SqlNode>();
+
+    private static IEnumerable<SqlNode> GrantChildren(GrantStatement node)
+    {
+        foreach (var item in node.Objects) yield return item;
+        foreach (var item in node.Grantees) yield return item;
+    }
+
+    private static IEnumerable<SqlNode> SetChildren(SetStatement node)
+    {
+        foreach (var item in node.Keywords) yield return item;
+        foreach (var item in node.Arguments) yield return item;
     }
 }

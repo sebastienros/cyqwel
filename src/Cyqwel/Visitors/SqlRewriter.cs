@@ -22,6 +22,8 @@ public abstract partial class SqlRewriter
             UpdateStatement value => VisitUpdate(value),
             DeleteStatement value => VisitDelete(value),
             MergeStatement value => VisitMerge(value),
+            GrantStatement value => VisitGrant(value),
+            SetStatement value => VisitSet(value),
             CreateTableStatement value => VisitCreateTable(value),
             AlterTableStatement value => VisitAlterTable(value),
             DropStatement value => VisitDrop(value),
@@ -34,6 +36,9 @@ public abstract partial class SqlRewriter
             ColumnExpression value => VisitColumn(value),
             StarExpression value => VisitStar(value),
             LiteralExpression value => VisitLiteral(value),
+            TrimExpression value => VisitTrim(value),
+            TypedLiteralExpression value => VisitTypedLiteral(value),
+            HexLiteralExpression value => VisitHexLiteral(value),
             ParameterExpression value => VisitParameter(value),
             ParenthesizedExpression value => VisitParenthesized(value),
             UnaryExpression value => VisitUnary(value),
@@ -75,6 +80,7 @@ public abstract partial class SqlRewriter
             MergeInsertAction value => VisitMergeInsert(value),
             MergeDeleteAction value => VisitMergeDelete(value),
             ColumnDefinition value => VisitColumnDefinition(value),
+            IndexTableElement value => VisitIndexTableElement(value),
             PrimaryKeyConstraint value => VisitPrimaryKeyConstraint(value),
             UniqueConstraint value => VisitUniqueConstraint(value),
             ForeignKeyConstraint value => VisitForeignKeyConstraint(value),
@@ -236,7 +242,7 @@ public abstract partial class SqlRewriter
         var returning = VisitOptionalList(node.Returning);
         var returningInto = VisitOptionalList(node.ReturningInto);
         var usingSource = VisitOptional(node.Using);
-
+ 
         return ReferenceEquals(target, node.Target)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
@@ -253,6 +259,24 @@ public abstract partial class SqlRewriter
                 };
     }
 
+    protected virtual SqlNode VisitGrant(GrantStatement node)
+    {
+        var objects = VisitOptionalList(node.Objects);
+        var grantees = VisitOptionalList(node.Grantees);
+        return ReferenceEquals(objects, node.Objects) && ReferenceEquals(grantees, node.Grantees)
+            ? node
+            : node with { Objects = objects, Grantees = grantees };
+    }
+
+    protected virtual SqlNode VisitSet(SetStatement node)
+    {
+        var keywords = VisitOptionalList(node.Keywords);
+        var arguments = VisitList(node.Arguments);
+        return ReferenceEquals(keywords, node.Keywords) && ReferenceEquals(arguments, node.Arguments)
+            ? node
+            : node with { Keywords = keywords, Arguments = arguments };
+    }
+ 
     protected virtual SqlNode VisitIdentifier(SqlIdentifier node) => node;
 
     protected virtual SqlNode VisitColumn(ColumnExpression node) =>
@@ -262,6 +286,26 @@ public abstract partial class SqlRewriter
         UpdateOptional(node, VisitOptionalList(node.Qualifier), node.Qualifier, static (n, qualifier) => n with { Qualifier = qualifier });
 
     protected virtual SqlNode VisitLiteral(LiteralExpression node) => node;
+    protected virtual SqlNode VisitTrim(TrimExpression node)
+    {
+        var character = VisitOptional(node.Character);
+        var source = Visit(node.Source);
+        return ReferenceEquals(character, node.Character) && ReferenceEquals(source, node.Source)
+            ? node
+            : node with { Character = character, Source = source };
+    }
+
+    protected virtual SqlNode VisitTypedLiteral(TypedLiteralExpression node)
+    {
+        var typeName = Visit(node.TypeName);
+        var value = Visit(node.Value);
+        return ReferenceEquals(typeName, node.TypeName) && ReferenceEquals(value, node.Value)
+            ? node
+            : node with { TypeName = typeName, Value = value };
+    }
+
+    protected virtual SqlNode VisitHexLiteral(HexLiteralExpression node) => node;
+
     protected virtual SqlNode VisitParameter(ParameterExpression node)
     {
         var defaultValue = VisitOptional(node.DefaultValue);
