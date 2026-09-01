@@ -2135,7 +2135,7 @@ public static class SqlParser
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return new LocalReferenceRewriter(
             names,
-            rewriteColumns: routineGrammar != RoutineGrammar.AtPrefixedBatch).Visit(block);
+            rewriteColumns: !routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch)).Visit(block);
     }
 
     private sealed class LocalReferenceRewriter(
