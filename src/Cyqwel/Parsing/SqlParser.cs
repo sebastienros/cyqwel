@@ -193,6 +193,7 @@ public static class SqlParser
         var APPLY = Keyword("APPLY");
         var TIMESTAMPTZ = Keyword("TIMESTAMPTZ");
         var PROCEDURE = Keyword("PROCEDURE");
+        var PROC = Keyword("PROC");
         var CALL = Keyword("CALL");
         var EXEC = Keyword("EXEC").Or(Keyword("EXECUTE"));
         var BEGIN = Keyword("BEGIN");
@@ -1683,11 +1684,16 @@ public static class SqlParser
             if (syntax.SupportsStoredProcedures)
             {
                 var definitions = new List<Parser<ParsedProcedureDefinition>>();
+                var tSqlProcedure = PROC.Or(PROCEDURE);
                 if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch))
                 {
-                    var parameters = Separated(comma, tSqlParameter);
+                    var parameters = Separated(comma, tSqlParameter)
+                        .Optional()
+                        .Then(value => value.HasValue
+                            ? value.Value
+                            : Array.Empty<ProcedureParameter>());
                     definitions.Add(CREATE.SkipAnd(OR.SkipAnd(ALTER).Optional())
-                        .AndSkip(PROCEDURE)
+                        .AndSkip(tSqlProcedure)
                         .And(tableName)
                         .And(parameters)
                         .And(tSqlBody)
@@ -1696,7 +1702,7 @@ public static class SqlParser
                             value.Item3,
                             value.Item4,
                             value.Item1.HasValue)));
-                    definitions.Add(ALTER.SkipAnd(PROCEDURE)
+                    definitions.Add(ALTER.SkipAnd(tSqlProcedure)
                         .SkipAnd(tableName)
                         .And(parameters)
                         .And(tSqlBody)
@@ -1746,7 +1752,10 @@ public static class SqlParser
 
                 var createOrReplace = OneOf(definitions.ToArray())
                     .Then<SqlStatement>(definition => BuildProcedureDefinition(definition, routineGrammar));
-                var dropProcedure = DROP.SkipAnd(PROCEDURE)
+                var procedureKeyword = routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch)
+                    ? tSqlProcedure
+                    : PROCEDURE;
+                var dropProcedure = DROP.SkipAnd(procedureKeyword)
                 .SkipAnd(IF.SkipAnd(EXISTS).Optional())
                 .And(tableName)
                 .And(Between(leftParenthesis, Separated(comma, dataType), rightParenthesis).Optional())
@@ -1999,8 +2008,11 @@ public static class SqlParser
             || value.StartsWith("CREATE PROC ", StringComparison.OrdinalIgnoreCase)
             || value.StartsWith("CREATE OR REPLACE PROCEDURE ", StringComparison.OrdinalIgnoreCase)
             || value.StartsWith("CREATE OR ALTER PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CREATE OR ALTER PROC ", StringComparison.OrdinalIgnoreCase)
             || value.StartsWith("ALTER PROCEDURE ", StringComparison.OrdinalIgnoreCase)
-            || value.StartsWith("DROP PROCEDURE ", StringComparison.OrdinalIgnoreCase);
+            || value.StartsWith("ALTER PROC ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DROP PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DROP PROC ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool LooksLikeAnonymousProceduralBlock(string sql)

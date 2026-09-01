@@ -127,6 +127,24 @@ public sealed class StoredProcedureTests
     }
 
     [Fact]
+    public void TSql_proc_shorthand_parses_to_procedure_nodes()
+    {
+        var create = Assert.IsType<CreateProcedureStatement>(SqlDialects.TSql.Parse(
+            "CREATE PROC p AS BEGIN RETURN; END").Statements[0]);
+        var createOrAlter = Assert.IsType<ReplaceProcedureStatement>(SqlDialects.TSql.Parse(
+            "CREATE OR ALTER PROC p AS BEGIN RETURN; END").Statements[0]);
+        var alter = Assert.IsType<ReplaceProcedureStatement>(SqlDialects.TSql.Parse(
+            "ALTER PROC p AS BEGIN RETURN; END").Statements[0]);
+        var drop = Assert.IsType<DropProcedureStatement>(SqlDialects.TSql.Parse(
+            "DROP PROC p").Statements[0]);
+
+        Assert.StartsWith("CREATE PROCEDURE p", create.ToSql(SqlDialects.TSql));
+        Assert.StartsWith("CREATE OR ALTER PROCEDURE p", createOrAlter.ToSql(SqlDialects.TSql));
+        Assert.StartsWith("CREATE OR ALTER PROCEDURE p", alter.ToSql(SqlDialects.TSql));
+        Assert.Equal("DROP PROCEDURE p", drop.ToSql(SqlDialects.TSql));
+    }
+
+    [Fact]
     public void Parser_normalizes_local_references()
     {
         var procedure = Assert.IsType<CreateProcedureStatement>(SqlDialects.TSql.Parse(
