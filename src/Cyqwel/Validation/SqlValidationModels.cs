@@ -143,6 +143,12 @@ public static class SqlValidationCodes
     public const string AmbiguousColumnReference = "E221";
     public const string UnresolvedReference = "E222";
     public const string CteColumnCountMismatch = "E223";
+    public const string DuplicateProceduralSymbol = "E230";
+    public const string InvalidProcedureDefault = "E231";
+    public const string UnknownLocalVariable = "E232";
+    public const string InvalidProcedureArgument = "E233";
+    public const string InvalidProceduralContext = "E234";
+    public const string InvalidLoopControl = "E235";
 
     public const string CartesianJoin = "W220";
     public const string JoinNotUsingDeclaredReference = "W221";

@@ -32,6 +32,15 @@ public abstract partial class SqlRewriter
             CreateIndexStatement value => VisitCreateIndex(value),
             CreateSequenceStatement value => VisitCreateSequence(value),
             AlterSequenceStatement value => VisitAlterSequence(value),
+            CreateProcedureStatement value => VisitCreateProcedure(value),
+            ReplaceProcedureStatement value => VisitReplaceProcedure(value),
+            DropProcedureStatement value => VisitDropProcedure(value),
+            CallProcedureStatement value => VisitCallProcedure(value),
+            ProceduralIfStatement value => VisitProceduralIf(value),
+            ProceduralWhileStatement value => VisitProceduralWhile(value),
+            ProceduralBreakStatement value => VisitProceduralBreak(value),
+            ProceduralContinueStatement value => VisitProceduralContinue(value),
+            ProceduralReturnStatement value => VisitProceduralReturn(value),
             SqlIdentifier value => VisitIdentifier(value),
             ColumnExpression value => VisitColumn(value),
             StarExpression value => VisitStar(value),
@@ -40,6 +49,7 @@ public abstract partial class SqlRewriter
             TypedLiteralExpression value => VisitTypedLiteral(value),
             HexLiteralExpression value => VisitHexLiteral(value),
             ParameterExpression value => VisitParameter(value),
+            LocalVariableExpression value => VisitLocalVariableExpression(value),
             ParenthesizedExpression value => VisitParenthesized(value),
             UnaryExpression value => VisitUnary(value),
             BinaryExpression value => VisitBinary(value),
@@ -94,6 +104,10 @@ public abstract partial class SqlRewriter
             RenameTableAction value => VisitRenameTable(value),
             IndexColumn value => VisitIndexColumn(value),
             SequenceOptions value => VisitSequenceOptions(value),
+            ProcedureParameter value => VisitProcedureParameter(value),
+            LocalVariable value => VisitLocalVariable(value),
+            ProceduralBlock value => VisitProceduralBlock(value),
+            ProcedureArgument value => VisitProcedureArgument(value),
             _ => throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'."),
         };
     }
@@ -242,7 +256,7 @@ public abstract partial class SqlRewriter
         var returning = VisitOptionalList(node.Returning);
         var returningInto = VisitOptionalList(node.ReturningInto);
         var usingSource = VisitOptional(node.Using);
- 
+
         return ReferenceEquals(target, node.Target)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
@@ -276,7 +290,7 @@ public abstract partial class SqlRewriter
             ? node
             : node with { Keywords = keywords, Arguments = arguments };
     }
- 
+
     protected virtual SqlNode VisitIdentifier(SqlIdentifier node) => node;
 
     protected virtual SqlNode VisitColumn(ColumnExpression node) =>

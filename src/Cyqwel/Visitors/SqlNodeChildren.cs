@@ -46,6 +46,38 @@ internal static partial class SqlNodeChildren
                 return [value.Name, value.Options];
             case AlterSequenceStatement value:
                 return [value.Name, value.Options];
+            case CreateProcedureStatement value:
+                return ProcedureDefinitionChildren(value.Name, value.Parameters, value.Body);
+            case ReplaceProcedureStatement value:
+                return ProcedureDefinitionChildren(value.Name, value.Parameters, value.Body);
+            case DropProcedureStatement value:
+                return value.ParameterTypes is null
+                    ? [value.Name]
+                    : [value.Name, .. value.ParameterTypes];
+            case CallProcedureStatement value:
+                return [value.Name, .. value.Arguments];
+            case ProceduralIfStatement value:
+                return ProceduralIfChildren(value);
+            case ProceduralWhileStatement value:
+                return [value.Condition, .. value.Statements];
+            case ProceduralBreakStatement:
+            case ProceduralContinueStatement:
+            case ProceduralReturnStatement:
+                return [];
+            case ProcedureParameter value:
+                return value.Default is null
+                    ? [value.Name, value.DataType]
+                    : [value.Name, value.DataType, value.Default];
+            case LocalVariable value:
+                return value.Initializer is null
+                    ? [value.Name, value.DataType]
+                    : [value.Name, value.DataType, value.Initializer];
+            case ProceduralBlock value:
+                return [.. value.Variables, .. value.Statements];
+            case ProcedureArgument value:
+                return value.Name is null ? [value.Value] : [value.Name, value.Value];
+            case LocalVariableExpression value:
+                return [value.Name];
             case ColumnExpression value:
                 return value.Parts;
             case StarExpression value:
@@ -391,5 +423,25 @@ internal static partial class SqlNodeChildren
     {
         foreach (var item in node.Keywords) yield return item;
         foreach (var item in node.Arguments) yield return item;
+    }
+
+    private static IEnumerable<SqlNode> ProcedureDefinitionChildren(
+        TableName name,
+        IReadOnlyList<ProcedureParameter> parameters,
+        ProceduralBlock body)
+    {
+        yield return name;
+        foreach (var parameter in parameters) yield return parameter;
+        yield return body;
+    }
+
+    private static IEnumerable<SqlNode> ProceduralIfChildren(ProceduralIfStatement node)
+    {
+        yield return node.Condition;
+        foreach (var statement in node.Then) yield return statement;
+        if (node.Else is not null)
+        {
+            foreach (var statement in node.Else) yield return statement;
+        }
     }
 }

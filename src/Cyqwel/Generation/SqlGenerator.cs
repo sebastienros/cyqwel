@@ -12,6 +12,9 @@ public sealed partial class SqlGenerator
     private readonly SqlGenerationOptions _options;
     private StringBuilder _builder = null!;
     private int _indent;
+    private int _loopCounter;
+    private readonly Stack<string> _loopLabels = new();
+    private int _proceduralContextDepth;
 
     public SqlGenerator(SqlDialect dialect, SqlGenerationOptions? options = null)
     {
@@ -34,6 +37,9 @@ public sealed partial class SqlGenerator
             StringBuilderPool.Return(_builder);
             _builder = null!;
             _indent = 0;
+            _loopCounter = 0;
+            _loopLabels.Clear();
+            _proceduralContextDepth = 0;
         }
     }
 
@@ -60,6 +66,16 @@ public sealed partial class SqlGenerator
             case CreateIndexStatement value: WriteCreateIndex(value); break;
             case CreateSequenceStatement value: WriteCreateSequence(value); break;
             case AlterSequenceStatement value: WriteAlterSequence(value); break;
+            case CreateProcedureStatement value: WriteProcedureDefinition(value.Name, value.Parameters, value.Body, false); break;
+            case ReplaceProcedureStatement value: WriteProcedureDefinition(value.Name, value.Parameters, value.Body, true); break;
+            case DropProcedureStatement value: WriteDropProcedure(value); break;
+            case CallProcedureStatement value: WriteCallProcedure(value); break;
+            case ProceduralBlock value: WriteProceduralBlock(value); break;
+            case ProceduralIfStatement value: WriteProceduralIf(value); break;
+            case ProceduralWhileStatement value: WriteProceduralWhile(value); break;
+            case ProceduralBreakStatement: WriteProceduralLoopControl(isContinue: false); break;
+            case ProceduralContinueStatement: WriteProceduralLoopControl(isContinue: true); break;
+            case ProceduralReturnStatement: WriteProceduralReturn(); break;
             case SqlExpression value: WriteExpression(value); break;
             default: throw new NotSupportedException($"SQL generation does not support '{node.GetType().Name}' as a root node.");
         }
@@ -67,15 +83,19 @@ public sealed partial class SqlGenerator
 
     private void WriteDocument(SqlDocument document)
     {
+        var written = 0;
         for (var i = 0; i < document.Statements.Count; i++)
         {
-            if (i > 0)
+            if (ShouldOmitStatement(document.Statements[i])) continue;
+
+            if (written > 0)
             {
                 _builder.Append(';');
                 NewLine();
             }
 
             WriteNode(document.Statements[i]);
+            written++;
         }
     }
 
@@ -732,6 +752,9 @@ public sealed partial class SqlGenerator
                 break;
             case ParameterExpression parameter:
                 WriteParameter(parameter);
+                break;
+            case LocalVariableExpression variable:
+                WriteLocalVariableReference(variable);
                 break;
             case ParenthesizedExpression parenthesized:
                 _builder.Append('(');

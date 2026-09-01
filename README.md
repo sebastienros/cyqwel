@@ -207,6 +207,71 @@ advanced joins, `EXPLAIN`, `MERGE`, `UPDATE FROM`, `DELETE USING`,
 Builder helpers only expose forms that can be parsed by at least one built-in
 dialect, so generated builder SQL can round-trip through the syntax tree.
 
+## Stored procedures
+
+Stored procedures can be parsed, inspected, transformed, validated, and generated for T-SQL, PostgreSQL, MySQL,
+Oracle, or generic SQL. SQLite reports that it does not support procedures and
+generation throws by default.
+
+```csharp
+var procedure = Sql.CreateProcedure("app.activate_user")
+    .Parameter("user_id", "INTEGER")
+    .Variable("changed", "INTEGER", Sql.Lit(0))
+    .Statement(Sql.Update("users")
+        .Set("active", true)
+        .Where(Sql.Col("id").EqualTo(Sql.Local("user_id")))
+        .Build())
+    .While(
+        Sql.Local("changed").GreaterThan(Sql.Lit(0)),
+        [
+            Sql.If(
+                Sql.Local("changed").EqualTo(Sql.Lit(1)),
+                [Sql.Break()]),
+            Sql.Continue(),
+        ])
+    .Return()
+    .Build();
+
+var createSql = procedure.ToSql(SqlDialects.PostgreSql);
+var callSql = Sql.CallProcedure("app.activate_user")
+    .Argument(42)
+    .ToSql(SqlDialects.PostgreSql);
+```
+
+The structured procedure subset includes typed `IN`, `OUT`, and `INOUT`
+parameters, defaults, local variables, `IF` / `ELSE`, `WHILE`, `BREAK`,
+`CONTINUE`, early `RETURN`, and the SQL statements already supported by Cyqwel.
+`BREAK` and `CONTINUE` always target the innermost loop; Cyqwel generates the
+labels required by MySQL and generic SQL automatically. `FOR` loops, cursors,
+handlers, and arbitrary procedural bodies are outside this subset.
+
+Reusable procedural nodes use the `Procedural*` prefix (`ProceduralBlock`,
+`ProceduralIfStatement`, `ProceduralWhileStatement`, and the loop-control nodes),
+while declarations use `LocalVariable` and references use
+`LocalVariableExpression`. The short builder helpers are `Sql.Local`, `Sql.If`,
+`Sql.While`, `Sql.Break`, `Sql.Continue`, and `Sql.Return`.
+
+The same nodes can be executed outside a procedure through an anonymous block:
+
+```csharp
+var block = Sql.Block()
+    .Variable("attempt", "INTEGER", Sql.Lit(0))
+    .While(
+        Sql.Local("attempt").LessThan(Sql.Lit(3)),
+        [Sql.If(Sql.Local("attempt").EqualTo(Sql.Lit(2)), [Sql.Break()])])
+    .Return()
+    .Build();
+
+var sql = block.ToSql(SqlDialects.PostgreSql);
+```
+
+Anonymous blocks are supported by Generic SQL, T-SQL, PostgreSQL, and Oracle,
+and exposed through `SupportsAnonymousProceduralBlocks`. MySQL and SQLite report
+this capability as false, so generation throws by default or omits the complete
+block with `UnsupportedBehavior.Ignore`. T-SQL additionally permits `IF`,
+`WHILE`, and `RETURN` directly at batch level. Loop control must still be nested
+inside a `WHILE`.
+
 ## Extend dialects
 
 Create a dialect from an existing one and override only the behavior your application needs:
@@ -228,6 +293,11 @@ var sql = warehouse.Generate(Sql.Func("LEN", Sql.Col("name")));
 ```
 
 Custom dialects can configure parsing, transform syntax nodes, and customize literal or function rendering. Registered dialects are available by name through `SqlDialectRegistry`.
+
+New dialects start with stored procedures and anonymous blocks disabled. A
+builder based on a built-in dialect inherits that dialect's routine grammar and
+generation behavior; enabling either capability on a base without routines opts
+into the Generic SQL structured subset.
 
 ## Supported dialects
 
