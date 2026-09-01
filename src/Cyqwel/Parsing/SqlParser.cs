@@ -1646,6 +1646,8 @@ public static class SqlParser
                     anonymousBlocks.Add(tSqlIf);
                     anonymousBlocks.Add(tSqlWhile);
                     anonymousBlocks.Add(proceduralReturn);
+                    anonymousBlocks.Add(proceduralBreak);
+                    anonymousBlocks.Add(proceduralContinue);
                 }
                 if (routineGrammar.HasFlag(RoutineGrammar.DollarQuoted))
                 {

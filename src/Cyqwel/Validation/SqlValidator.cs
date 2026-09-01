@@ -384,7 +384,7 @@ public static class SqlValidator
                     }
                     break;
                 case ProceduralBlock block:
-                    AddProceduralLoopDiagnostics(block.Statements, 0, sql, diagnostics);
+                    AddProceduralLoopDiagnostics(block.Statements, loopDepth, sql, diagnostics);
                     break;
             }
         }

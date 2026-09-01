@@ -265,7 +265,7 @@ public sealed class StoredProcedureTests
             Sql.Select("id").From("users").Build(),
             create,
             Sql.Select("name").From("users").Build());
-        Assert.Equal("SELECT id FROM users;\nSELECT name FROM users", document.ToSql(
+        Assert.Equal($"SELECT id FROM users;{Environment.NewLine}SELECT name FROM users", document.ToSql(
             SqlDialects.Sqlite,
             new SqlGenerationOptions { UnsupportedBehavior = UnsupportedSqlBehavior.Ignore }));
 
@@ -385,6 +385,44 @@ public sealed class StoredProcedureTests
         Assert.Throws<NotSupportedException>(() => Sql.Break().ToSql(SqlDialects.Generic));
     }
 
+    [Fact]
+    public void Schema_validation_descends_into_nested_procedural_blocks()
+    {
+        var nestedBlock = Sql.Block()
+            .Statement(Sql.Block()
+                .Statement(Sql.Select("id").From("missing").Build())
+                .Build())
+            .Build();
+        var diagnostics = new List<SqlValidationDiagnostic>();
+
+        new SchemaValidationEngine(
+            string.Empty,
+            new SqlSchemaCatalog(),
+            SqlSchemaValidationOptions.Default,
+            diagnostics).Validate(Sql.Document(nestedBlock));
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Code == SqlValidationCodes.UnknownTable);
+    }
+
+    [Fact]
+    public void Nested_procedural_blocks_preserve_the_enclosing_loop_context()
+    {
+        var block = Sql.Block()
+            .While(
+                Sql.Lit(true),
+                [Sql.Block().Break().Continue().Build()])
+            .Build();
+
+        var result = SqlValidator.Validate(
+            block.ToSql(SqlDialects.Generic),
+            SqlDialects.Generic,
+            new SqlValidationOptions { Semantic = true });
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic =>
+            diagnostic.Code == SqlValidationCodes.InvalidLoopControl);
+    }
+
     [Theory]
     [InlineData("generic")]
     [InlineData("tsql")]
@@ -425,7 +463,7 @@ public sealed class StoredProcedureTests
             Sql.Select(Sql.Lit(1)).Build(),
             block,
             Sql.Select(Sql.Lit(2)).Build());
-        Assert.Equal("SELECT 1;\nSELECT 2", document.ToSql(
+        Assert.Equal($"SELECT 1;{Environment.NewLine}SELECT 2", document.ToSql(
             SqlDialects.MySql,
             new SqlGenerationOptions { UnsupportedBehavior = UnsupportedSqlBehavior.Ignore }));
 
@@ -454,6 +492,20 @@ public sealed class StoredProcedureTests
         Assert.Equal(string.Empty, Sql.Return().ToSql(
             SqlDialects.PostgreSql,
             new SqlGenerationOptions { UnsupportedBehavior = UnsupportedSqlBehavior.Ignore }));
+    }
+
+    [Fact]
+    public void TSql_top_level_loop_control_only_reports_loop_depth_errors()
+    {
+        var validation = SqlValidator.Validate(
+            "BREAK; CONTINUE",
+            SqlDialects.TSql,
+            new SqlValidationOptions { Semantic = true });
+
+        Assert.Equal(2, validation.Diagnostics.Count(diagnostic =>
+            diagnostic.Code == SqlValidationCodes.InvalidLoopControl));
+        Assert.DoesNotContain(validation.Diagnostics, diagnostic =>
+            diagnostic.Code == SqlValidationCodes.InvalidProceduralContext);
     }
 
     private sealed class IdentityRewriter : SqlRewriter;
