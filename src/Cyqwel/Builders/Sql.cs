@@ -105,8 +105,11 @@ public static class Sql
 
         if (expression is not ParameterExpression
             && expression is not LiteralExpression { Value: string or char or DateTime or DateTimeOffset }
-            && expression is not LiteralExpression { Value: byte or sbyte or short or ushort or int or uint
-                or long or ulong or float or double or decimal })
+            && expression is not LiteralExpression
+            {
+                Value: byte or sbyte or short or ushort or int or uint
+                or long or ulong or float or double or decimal
+            })
         {
             throw new ArgumentException(
                 "Interval values must be numeric, textual, temporal, or parameter expressions.",
@@ -234,6 +237,35 @@ public static class Sql
     public static CreateSequenceBuilder CreateSequence(string sequence) => new(sequence);
 
     public static AlterSequenceBuilder AlterSequence(string sequence) => new(sequence);
+
+    public static CreateProcedureBuilder CreateProcedure(string procedure) => new(procedure);
+
+    public static ReplaceProcedureBuilder ReplaceProcedure(string procedure) => new(procedure);
+
+    public static DropProcedureBuilder DropProcedure(string procedure) => new(procedure);
+
+    public static CallProcedureBuilder CallProcedure(string procedure) => new(procedure);
+
+    public static ProceduralBlockBuilder Block() => new();
+
+    public static LocalVariableExpression Local(string name) => new(name);
+
+    public static ProceduralIfStatement If(
+        SqlExpression condition,
+        IReadOnlyList<SqlStatement> thenStatements,
+        IReadOnlyList<SqlStatement>? elseStatements = null) =>
+        new(condition, thenStatements, elseStatements);
+
+    public static ProceduralWhileStatement While(
+        SqlExpression condition,
+        IReadOnlyList<SqlStatement> statements) =>
+        new(condition, statements);
+
+    public static ProceduralBreakStatement Break() => new();
+
+    public static ProceduralContinueStatement Continue() => new();
+
+    public static ProceduralReturnStatement Return() => new();
 
     public static ColumnDefinition DefineColumn(
         string name,

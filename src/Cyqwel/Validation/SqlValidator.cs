@@ -31,7 +31,7 @@ public static class SqlValidator
             out var document);
         if (document is not null && options.Semantic)
         {
-            AddSemanticDiagnostics(document, sql, diagnostics);
+            AddSemanticDiagnostics(document, sql, dialect ?? SqlDialects.Generic, diagnostics);
         }
 
         return new SqlValidationResult(diagnostics);
@@ -55,7 +55,7 @@ public static class SqlValidator
             out var document);
         if (document is null) return new SqlValidationResult(diagnostics);
 
-        if (options.Semantic) AddSemanticDiagnostics(document, sql, diagnostics);
+        if (options.Semantic) AddSemanticDiagnostics(document, sql, dialect ?? SqlDialects.Generic, diagnostics);
         new SchemaValidationEngine(sql, catalog, options, diagnostics).Validate(document);
         return new SqlValidationResult(diagnostics);
     }
@@ -102,6 +102,7 @@ public static class SqlValidator
     private static void AddSemanticDiagnostics(
         SqlDocument document,
         string sql,
+        SqlDialect dialect,
         List<SqlValidationDiagnostic> diagnostics)
     {
         foreach (var select in document.FindAll<SelectStatement>())
@@ -198,6 +199,194 @@ public static class SqlValidator
                     set.Limit ?? set.Offset!));
             }
         }
+
+        AddProceduralDiagnostics(document, sql, dialect, diagnostics);
+    }
+
+    private static void AddProceduralDiagnostics(
+        SqlDocument document,
+        string sql,
+        SqlDialect dialect,
+        List<SqlValidationDiagnostic> diagnostics)
+    {
+        foreach (var statement in document.Statements)
+        {
+            if (statement is ProceduralBreakStatement or ProceduralContinueStatement
+                || !dialect.SupportsTopLevelProceduralControlFlow
+                && statement is (ProceduralIfStatement
+                    or ProceduralWhileStatement
+                    or ProceduralReturnStatement))
+            {
+                diagnostics.Add(Error(
+                    SqlValidationCodes.InvalidProceduralContext,
+                    "The procedural statement is not valid in this dialect context.",
+                    sql,
+                    statement));
+            }
+        }
+
+        foreach (var definition in document.Statements)
+        {
+            var (parameters, body) = definition switch
+            {
+                CreateProcedureStatement create => (create.Parameters, create.Body),
+                ReplaceProcedureStatement replace => (replace.Parameters, replace.Body),
+                _ => (null, null),
+            };
+            if (parameters is null || body is null) continue;
+
+            var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var defaultSeen = false;
+            foreach (var parameter in parameters)
+            {
+                if (!symbols.Add(parameter.Name.Value))
+                {
+                    diagnostics.Add(Error(
+                        SqlValidationCodes.DuplicateProceduralSymbol,
+                        $"Procedure symbol '{parameter.Name.Value}' is declared more than once.",
+                        sql,
+                        parameter));
+                }
+
+                if (parameter.Mode == ProcedureParameterMode.Out && parameter.Default is not null)
+                {
+                    diagnostics.Add(Error(
+                        SqlValidationCodes.InvalidProcedureDefault,
+                        "OUT procedure parameters cannot have default values.",
+                        sql,
+                        parameter));
+                }
+
+                if (parameter.Default is not null) defaultSeen = true;
+                else if (defaultSeen && parameter.Mode != ProcedureParameterMode.Out)
+                {
+                    diagnostics.Add(Error(
+                        SqlValidationCodes.InvalidProcedureDefault,
+                        "Input parameters following a defaulted parameter must also have defaults.",
+                        sql,
+                        parameter));
+                }
+            }
+
+            AddProceduralBlockDiagnostics(body, symbols, sql, diagnostics);
+        }
+
+        foreach (var block in document.Statements.OfType<ProceduralBlock>())
+        {
+            AddProceduralBlockDiagnostics(
+                block,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                sql,
+                diagnostics);
+        }
+
+        if (dialect.SupportsTopLevelProceduralControlFlow)
+        {
+            AddProceduralLoopDiagnostics(
+                document.Statements.Where(static statement => statement is not ProceduralBlock).ToArray(),
+                0,
+                sql,
+                diagnostics);
+        }
+
+        foreach (var call in document.FindAll<CallProcedureStatement>())
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var namedSeen = false;
+            foreach (var argument in call.Arguments)
+            {
+                if (argument.Name is null)
+                {
+                    if (namedSeen)
+                    {
+                        diagnostics.Add(Error(
+                            SqlValidationCodes.InvalidProcedureArgument,
+                            "Positional procedure arguments cannot follow named arguments.",
+                            sql,
+                            argument));
+                    }
+                    continue;
+                }
+
+                namedSeen = true;
+                if (!names.Add(argument.Name.Value))
+                {
+                    diagnostics.Add(Error(
+                        SqlValidationCodes.InvalidProcedureArgument,
+                        $"Procedure argument '{argument.Name.Value}' is specified more than once.",
+                        sql,
+                        argument));
+                }
+            }
+        }
+    }
+
+    private static void AddProceduralBlockDiagnostics(
+        ProceduralBlock block,
+        HashSet<string> symbols,
+        string sql,
+        List<SqlValidationDiagnostic> diagnostics)
+    {
+        foreach (var variable in block.Variables)
+        {
+            if (!symbols.Add(variable.Name.Value))
+            {
+                diagnostics.Add(Error(
+                    SqlValidationCodes.DuplicateProceduralSymbol,
+                    $"Local symbol '{variable.Name.Value}' is declared more than once.",
+                    sql,
+                    variable));
+            }
+        }
+
+        foreach (var variable in block.FindAll<LocalVariableExpression>())
+        {
+            if (!symbols.Contains(variable.Name.Value))
+            {
+                diagnostics.Add(Error(
+                    SqlValidationCodes.UnknownLocalVariable,
+                    $"Local variable '{variable.Name.Value}' is not declared.",
+                    sql,
+                    variable));
+            }
+        }
+
+        AddProceduralLoopDiagnostics(block.Statements, 0, sql, diagnostics);
+    }
+
+    private static void AddProceduralLoopDiagnostics(
+        IReadOnlyList<SqlStatement> statements,
+        int loopDepth,
+        string sql,
+        List<SqlValidationDiagnostic> diagnostics)
+    {
+        foreach (var statement in statements)
+        {
+            switch (statement)
+            {
+                case ProceduralBreakStatement or ProceduralContinueStatement when loopDepth == 0:
+                    diagnostics.Add(Error(
+                        SqlValidationCodes.InvalidLoopControl,
+                        $"{(statement is ProceduralBreakStatement ? "BREAK" : "CONTINUE")} can only appear inside a procedural WHILE loop.",
+                        sql,
+                        statement));
+                    break;
+                case ProceduralWhileStatement procedureWhile:
+                    AddProceduralLoopDiagnostics(
+                        procedureWhile.Statements, loopDepth + 1, sql, diagnostics);
+                    break;
+                case ProceduralIfStatement procedureIf:
+                    AddProceduralLoopDiagnostics(procedureIf.Then, loopDepth, sql, diagnostics);
+                    if (procedureIf.Else is not null)
+                    {
+                        AddProceduralLoopDiagnostics(procedureIf.Else, loopDepth, sql, diagnostics);
+                    }
+                    break;
+                case ProceduralBlock block:
+                    AddProceduralLoopDiagnostics(block.Statements, 0, sql, diagnostics);
+                    break;
+            }
+        }
     }
 
     private static bool ContainsAggregate(SqlExpression expression) => expression switch
@@ -274,6 +463,17 @@ public static class SqlValidator
         SqlNode node) =>
         new(
             SqlValidationSeverity.Warning,
+            code,
+            message,
+            CreateLocation(sql, node));
+
+    private static SqlValidationDiagnostic Error(
+        string code,
+        string message,
+        string sql,
+        SqlNode node) =>
+        new(
+            SqlValidationSeverity.Error,
             code,
             message,
             CreateLocation(sql, node));

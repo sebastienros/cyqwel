@@ -48,6 +48,47 @@ internal sealed class SchemaValidationEngine
                 case MergeStatement merge:
                     ValidateMerge(merge, ctes);
                     break;
+                case CreateProcedureStatement createProcedure:
+                    ValidateProcedureBody(createProcedure.Body, ctes);
+                    break;
+                case ReplaceProcedureStatement replaceProcedure:
+                    ValidateProcedureBody(replaceProcedure.Body, ctes);
+                    break;
+                case ProceduralBlock block:
+                    ValidateProceduralBlock(block, ctes);
+                    break;
+            }
+        }
+    }
+
+    private void ValidateProcedureBody(
+        ProceduralBlock body,
+        IReadOnlyDictionary<string, Projection> ctes)
+        => ValidateProceduralBlock(body, ctes);
+
+    private void ValidateProceduralBlock(
+        ProceduralBlock body,
+        IReadOnlyDictionary<string, Projection> ctes)
+    {
+        foreach (var statement in body.Statements)
+        {
+            switch (statement)
+            {
+                case SqlQuery query: ValidateQuery(query, ctes, null); break;
+                case InsertStatement insert: ValidateInsert(insert, ctes); break;
+                case UpdateStatement update: ValidateUpdate(update, ctes); break;
+                case DeleteStatement delete: ValidateDelete(delete, ctes); break;
+                case MergeStatement merge: ValidateMerge(merge, ctes); break;
+                case ProceduralIfStatement procedureIf:
+                    ValidateProceduralBlock(new ProceduralBlock([], procedureIf.Then), ctes);
+                    if (procedureIf.Else is not null)
+                    {
+                        ValidateProceduralBlock(new ProceduralBlock([], procedureIf.Else), ctes);
+                    }
+                    break;
+                case ProceduralWhileStatement procedureWhile:
+                    ValidateProceduralBlock(new ProceduralBlock([], procedureWhile.Statements), ctes);
+                    break;
             }
         }
     }
@@ -295,69 +336,69 @@ internal sealed class SchemaValidationEngine
         switch (source)
         {
             case NamedTable named:
-            {
-                var binding = BindNamedTable(named, ctes);
-                if (!scope.Add(binding))
                 {
-                    AddSchemaIssue(
-                        SqlValidationCodes.UnresolvedReference,
-                        $"Duplicate table alias or qualifier '{binding.Name}'.",
-                        named);
-                }
+                    var binding = BindNamedTable(named, ctes);
+                    if (!scope.Add(binding))
+                    {
+                        AddSchemaIssue(
+                            SqlValidationCodes.UnresolvedReference,
+                            $"Duplicate table alias or qualifier '{binding.Name}'.",
+                            named);
+                    }
 
-                return [binding];
-            }
+                    return [binding];
+                }
             case DerivedTable derived:
-            {
-                var projection = ValidateQuery(derived.Query, ctes, scope.Parent);
-                var binding = SourceBinding.FromProjection(
-                    derived.Alias.Value,
-                    projection,
-                    derived.Alias.Value);
-                if (!scope.Add(binding))
                 {
-                    AddSchemaIssue(
-                        SqlValidationCodes.UnresolvedReference,
-                        $"Duplicate table alias or qualifier '{binding.Name}'.",
-                        derived);
-                }
+                    var projection = ValidateQuery(derived.Query, ctes, scope.Parent);
+                    var binding = SourceBinding.FromProjection(
+                        derived.Alias.Value,
+                        projection,
+                        derived.Alias.Value);
+                    if (!scope.Add(binding))
+                    {
+                        AddSchemaIssue(
+                            SqlValidationCodes.UnresolvedReference,
+                            $"Duplicate table alias or qualifier '{binding.Name}'.",
+                            derived);
+                    }
 
-                return [binding];
-            }
+                    return [binding];
+                }
             case JoinTable join:
-            {
-                var left = BindTableSource(join.Left, scope, ctes);
-                var right = BindTableSource(join.Right, scope, ctes);
-                if (join.Condition is not null)
                 {
-                    RequirePredicate(
-                        join.Condition,
-                        ValidateExpression(join.Condition, scope, ctes));
-                }
-
-                if (join.Using is not null)
-                {
-                    foreach (var column in join.Using)
+                    var left = BindTableSource(join.Left, scope, ctes);
+                    var right = BindTableSource(join.Right, scope, ctes);
+                    if (join.Condition is not null)
                     {
-                        ValidateUsingColumn(column, left, right);
-                    }
-                }
-
-                if (_options.CheckReferences)
-                {
-                    if (join.Kind == JoinKind.Cross || join.Syntax == JoinSyntax.Comma)
-                    {
-                        AddWarning(
-                            SqlValidationCodes.CartesianJoin,
-                            "Cartesian join may produce an unexpectedly large result.",
-                            join);
+                        RequirePredicate(
+                            join.Condition,
+                            ValidateExpression(join.Condition, scope, ctes));
                     }
 
-                    CheckJoinRelationships(join, left, right, scope);
-                }
+                    if (join.Using is not null)
+                    {
+                        foreach (var column in join.Using)
+                        {
+                            ValidateUsingColumn(column, left, right);
+                        }
+                    }
 
-                return [.. left, .. right];
-            }
+                    if (_options.CheckReferences)
+                    {
+                        if (join.Kind == JoinKind.Cross || join.Syntax == JoinSyntax.Comma)
+                        {
+                            AddWarning(
+                                SqlValidationCodes.CartesianJoin,
+                                "Cartesian join may produce an unexpectedly large result.",
+                                join);
+                        }
+
+                        CheckJoinRelationships(join, left, right, scope);
+                    }
+
+                    return [.. left, .. right];
+                }
             default:
                 return [];
         }
@@ -484,12 +525,12 @@ internal sealed class SchemaValidationEngine
                     ValidateExpression(booleanTest.Expression, scope, ctes));
                 return SqlTypeFamily.Boolean;
             case DistinctFromExpression distinct:
-            {
-                var left = ValidateExpression(distinct.Left, scope, ctes);
-                var right = ValidateExpression(distinct.Right, scope, ctes);
-                CheckComparison(distinct, left, right);
-                return SqlTypeFamily.Boolean;
-            }
+                {
+                    var left = ValidateExpression(distinct.Left, scope, ctes);
+                    var right = ValidateExpression(distinct.Right, scope, ctes);
+                    CheckComparison(distinct, left, right);
+                    return SqlTypeFamily.Boolean;
+                }
             case RowExpression row:
                 ValidateExpressions(row.Values, scope, ctes);
                 return SqlTypeFamily.Struct;
@@ -513,15 +554,15 @@ internal sealed class SchemaValidationEngine
                 ValidateQuery(exists.Query, ctes, scope);
                 return SqlTypeFamily.Boolean;
             case SubqueryExpression subquery:
-            {
-                var projection = ValidateQuery(subquery.Query, ctes, scope);
-                if (projection.Columns.Count == 1) return projection.Columns[0].Type;
-                AddSchemaIssue(
-                    SqlValidationCodes.InvalidScalarSubquery,
-                    $"Scalar subquery projects {projection.Columns.Count} columns; expected one.",
-                    subquery);
-                return SqlTypeFamily.Unknown;
-            }
+                {
+                    var projection = ValidateQuery(subquery.Query, ctes, scope);
+                    if (projection.Columns.Count == 1) return projection.Columns[0].Type;
+                    AddSchemaIssue(
+                        SqlValidationCodes.InvalidScalarSubquery,
+                        $"Scalar subquery projects {projection.Columns.Count} columns; expected one.",
+                        subquery);
+                    return SqlTypeFamily.Unknown;
+                }
             case CaseExpression @case:
                 return ValidateCase(@case, scope, ctes);
             case CastExpression cast:

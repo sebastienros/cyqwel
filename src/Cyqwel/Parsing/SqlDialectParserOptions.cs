@@ -27,6 +27,20 @@ public enum SqlDoublePipeBehavior
     LogicalOr,
 }
 
+// Parser implementation detail. Public callers select a dialect and capabilities,
+// not a procedural vendor/style taxonomy.
+[Flags]
+internal enum RoutineGrammar
+{
+    None = 0,
+    Atomic = 1,
+    AtPrefixedBatch = 2,
+    DollarQuoted = 4,
+    Labeled = 8,
+    DeclarationFirst = 16,
+    All = Atomic | AtPrefixedBatch | DollarQuoted | Labeled | DeclarationFirst,
+}
+
 /// <summary>
 /// Configures the reusable Parlot grammar created for a SQL dialect.
 /// </summary>
@@ -58,6 +72,8 @@ public sealed record SqlDialectParserOptions
         SupportsExplainOptions = true,
         SupportsCreateViewSecurity = true,
         SupportsOracleDataTypes = true,
+        SupportsStoredProcedures = true,
+        SupportsAnonymousProceduralBlocks = true,
         DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
     };
 
@@ -104,6 +120,10 @@ public sealed record SqlDialectParserOptions
     public bool SupportsCreateViewSecurity { get; init; }
 
     public bool SupportsOracleDataTypes { get; init; }
+
+    public bool SupportsStoredProcedures { get; init; }
+
+    public bool SupportsAnonymousProceduralBlocks { get; init; }
 
     public SqlDoublePipeBehavior DoublePipeBehavior { get; init; } = SqlDoublePipeBehavior.Concatenate;
 }

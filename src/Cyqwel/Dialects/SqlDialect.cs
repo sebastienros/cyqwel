@@ -37,6 +37,9 @@ public class SqlDialect
         "ROW", "ROWS", "SELECT", "SET", "THEN", "TOP", "TRUE", "UNION", "UPDATE", "VALUES",
         "WHEN", "WHERE", "WITH", "MERGE", "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE",
         "VIEW", "INDEX", "SEQUENCE", "CONNECT", "PRIOR", "START", "SIBLINGS",
+        "PROCEDURE", "CALL", "EXEC", "EXECUTE", "BEGIN", "ATOMIC", "DECLARE", "OUTPUT",
+        "OUT", "INOUT", "LANGUAGE", "RETURN", "LEAVE", "WHILE", "LOOP", "DO", "BREAK",
+        "CONTINUE", "EXIT", "ITERATE",
     };
 
     public SqlDialect(
@@ -73,6 +76,24 @@ public class SqlDialect
     public virtual bool SupportsExplain => ParserOptions.SupportsExplainOptions;
 
     public virtual bool SupportsParenthesizedSetOperands => true;
+
+    public virtual bool SupportsStoredProcedures => false;
+
+    public virtual bool SupportsAnonymousProceduralBlocks => false;
+
+    internal virtual SqlGenerator.RoutineRenderer RoutineRenderer =>
+        SqlGenerator.RoutineRenderer.Unsupported;
+
+    internal virtual RoutineGrammar RoutineGrammar => RoutineGrammar.None;
+
+    internal bool SupportsProcedureParameterDefaults =>
+        RoutineRenderer.SupportsParameterDefaults;
+
+    internal bool SupportsNamedProcedureArguments =>
+        RoutineRenderer.SupportsNamedArguments;
+
+    internal bool SupportsTopLevelProceduralControlFlow =>
+        RoutineRenderer.SupportsTopLevelControlFlow;
 
     public virtual bool UsesSqlSecurityForViews => false;
 
@@ -176,10 +197,22 @@ public static class SqlDialects
     public static IReadOnlyList<SqlDialect> BuiltIn { get; } =
         [Generic, TSql, Sqlite, PostgreSql, MySql, Oracle];
 
-    private sealed class GenericDialect() : SqlDialect("generic");
+    private sealed class GenericDialect() : SqlDialect("generic")
+    {
+        public override bool SupportsStoredProcedures => true;
+        public override bool SupportsAnonymousProceduralBlocks => true;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            SqlGenerator.RoutineRenderer.Ansi;
+        internal override RoutineGrammar RoutineGrammar => RoutineGrammar.Atomic;
+    }
 
     private sealed class TSqlDialect() : SqlDialect("tsql", '[', ']', SqlLimitStyle.Top)
     {
+        public override bool SupportsStoredProcedures => true;
+        public override bool SupportsAnonymousProceduralBlocks => true;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            SqlGenerator.RoutineRenderer.TSql;
+        internal override RoutineGrammar RoutineGrammar => RoutineGrammar.AtPrefixedBatch;
         public override bool SupportsReturning => false;
         public override bool RequiresOrderByForOffset => true;
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Plus;
@@ -194,6 +227,8 @@ public static class SqlDialects
             SupportsReturning = false,
             SupportsILike = false,
             SupportsNullOrdering = false,
+            SupportsStoredProcedures = true,
+            SupportsAnonymousProceduralBlocks = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
         public override string TrueLiteral => "1";
@@ -230,6 +265,7 @@ public static class SqlDialects
             SupportsReturning = true,
             SupportsILike = false,
             SupportsNullOrdering = true,
+            SupportsStoredProcedures = false,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
         public override string TrueLiteral => "1";
@@ -317,6 +353,11 @@ public static class SqlDialects
 
     private sealed class PostgreSqlDialect() : SqlDialect("postgresql")
     {
+        public override bool SupportsStoredProcedures => true;
+        public override bool SupportsAnonymousProceduralBlocks => true;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            SqlGenerator.RoutineRenderer.PostgreSql;
+        internal override RoutineGrammar RoutineGrammar => RoutineGrammar.DollarQuoted;
         public override bool SupportsILike => true;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
@@ -329,12 +370,18 @@ public static class SqlDialects
             SupportsILike = true,
             SupportsNullOrdering = true,
             SupportsExplainOptions = true,
+            SupportsStoredProcedures = true,
+            SupportsAnonymousProceduralBlocks = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
     }
 
     private sealed class MySqlDialect() : SqlDialect("mysql", '`', '`', SqlLimitStyle.LimitOffsetComma)
     {
+        public override bool SupportsStoredProcedures => true;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            SqlGenerator.RoutineRenderer.MySql;
+        internal override RoutineGrammar RoutineGrammar => RoutineGrammar.Labeled;
         public override bool SupportsReturning => false;
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Function;
         public override bool UsesSqlSecurityForViews => true;
@@ -351,6 +398,7 @@ public static class SqlDialects
             SupportsILike = false,
             SupportsNullOrdering = false,
             SupportsCreateViewSecurity = true,
+            SupportsStoredProcedures = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.LogicalOr,
         };
 
@@ -360,6 +408,11 @@ public static class SqlDialects
 
     private sealed class OracleDialect() : SqlDialect("oracle", limitStyle: SqlLimitStyle.FetchFirst)
     {
+        public override bool SupportsStoredProcedures => true;
+        public override bool SupportsAnonymousProceduralBlocks => true;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            SqlGenerator.RoutineRenderer.Oracle;
+        internal override RoutineGrammar RoutineGrammar => RoutineGrammar.DeclarationFirst;
         public override bool SupportsTableAliasAs => false;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
@@ -377,6 +430,8 @@ public static class SqlDialects
             SupportsHierarchicalQueries = true,
             SupportsTableAliasAs = false,
             SupportsOracleDataTypes = true,
+            SupportsStoredProcedures = true,
+            SupportsAnonymousProceduralBlocks = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
 
@@ -588,6 +643,18 @@ public sealed class SqlDialectBuilder
         public override bool SupportsReturning => baseDialect.SupportsReturning;
         public override bool SupportsReturningInto => baseDialect.SupportsReturningInto;
         public override bool SupportsParenthesizedSetOperands => baseDialect.SupportsParenthesizedSetOperands;
+        public override bool SupportsStoredProcedures => ParserOptions.SupportsStoredProcedures;
+        public override bool SupportsAnonymousProceduralBlocks => ParserOptions.SupportsAnonymousProceduralBlocks;
+        internal override SqlGenerator.RoutineRenderer RoutineRenderer =>
+            baseDialect.RoutineRenderer == SqlGenerator.RoutineRenderer.Unsupported
+                && (ParserOptions.SupportsStoredProcedures || ParserOptions.SupportsAnonymousProceduralBlocks)
+                    ? SqlGenerator.RoutineRenderer.Ansi
+                    : baseDialect.RoutineRenderer;
+        internal override RoutineGrammar RoutineGrammar =>
+            baseDialect.RoutineGrammar == RoutineGrammar.None
+                && (ParserOptions.SupportsStoredProcedures || ParserOptions.SupportsAnonymousProceduralBlocks)
+                    ? RoutineGrammar.Atomic
+                    : baseDialect.RoutineGrammar;
         public override bool RequiresOrderByForOffset => baseDialect.RequiresOrderByForOffset;
         public override bool SupportsTableAliasAs => baseDialect.SupportsTableAliasAs;
         public override bool UsesSqlSecurityForViews => baseDialect.UsesSqlSecurityForViews;

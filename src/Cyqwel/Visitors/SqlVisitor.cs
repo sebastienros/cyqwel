@@ -32,6 +32,15 @@ public abstract partial class SqlVisitor
             case CreateIndexStatement value: VisitCreateIndex(value); break;
             case CreateSequenceStatement value: VisitCreateSequence(value); break;
             case AlterSequenceStatement value: VisitAlterSequence(value); break;
+            case CreateProcedureStatement value: VisitCreateProcedure(value); break;
+            case ReplaceProcedureStatement value: VisitReplaceProcedure(value); break;
+            case DropProcedureStatement value: VisitDropProcedure(value); break;
+            case CallProcedureStatement value: VisitCallProcedure(value); break;
+            case ProceduralIfStatement value: VisitProceduralIf(value); break;
+            case ProceduralWhileStatement value: VisitProceduralWhile(value); break;
+            case ProceduralBreakStatement value: VisitProceduralBreak(value); break;
+            case ProceduralContinueStatement value: VisitProceduralContinue(value); break;
+            case ProceduralReturnStatement value: VisitProceduralReturn(value); break;
             case SqlIdentifier value: VisitIdentifier(value); break;
             case ColumnExpression value: VisitColumn(value); break;
             case StarExpression value: VisitStar(value); break;
@@ -40,6 +49,7 @@ public abstract partial class SqlVisitor
             case TypedLiteralExpression value: VisitTypedLiteral(value); break;
             case HexLiteralExpression value: VisitHexLiteral(value); break;
             case ParameterExpression value: VisitParameter(value); break;
+            case LocalVariableExpression value: VisitLocalVariableExpression(value); break;
             case ParenthesizedExpression value: VisitParenthesized(value); break;
             case UnaryExpression value: VisitUnary(value); break;
             case BinaryExpression value: VisitBinary(value); break;
@@ -94,6 +104,10 @@ public abstract partial class SqlVisitor
             case RenameTableAction value: VisitRenameTable(value); break;
             case IndexColumn value: VisitIndexColumn(value); break;
             case SequenceOptions value: VisitSequenceOptions(value); break;
+            case ProcedureParameter value: VisitProcedureParameter(value); break;
+            case LocalVariable value: VisitLocalVariable(value); break;
+            case ProceduralBlock value: VisitProceduralBlock(value); break;
+            case ProcedureArgument value: VisitProcedureArgument(value); break;
             default: throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'.");
         }
     }

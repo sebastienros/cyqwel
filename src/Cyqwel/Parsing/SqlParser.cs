@@ -15,13 +15,17 @@ namespace Cyqwel.Parsing;
 /// </summary>
 public static class SqlParser
 {
-    private static readonly ConcurrentDictionary<
-        SqlDialectParserOptions,
-        Lazy<Parser<SqlDocument>>> ParserCache = new();
-    private static readonly Parser<SqlDocument> PermissiveParser =
-        CreateDocumentParser(SqlDialectParserOptions.Permissive);
+    private readonly record struct ParserCacheKey(
+        SqlDialectParserOptions Options,
+        RoutineGrammar RoutineGrammar);
 
-    private static Parser<SqlDocument> CreateDocumentParser(SqlDialectParserOptions syntax)
+    private static readonly ConcurrentDictionary<ParserCacheKey, Lazy<Parser<SqlDocument>>> ParserCache = new();
+    private static readonly Parser<SqlDocument> PermissiveParser =
+        CreateDocumentParser(SqlDialectParserOptions.Permissive, RoutineGrammar.All);
+
+    private static Parser<SqlDocument> CreateDocumentParser(
+        SqlDialectParserOptions syntax,
+        RoutineGrammar routineGrammar)
     {
         var comma = Terms.Char(',');
         var dot = Terms.Char('.');
@@ -188,6 +192,24 @@ public static class SqlParser
         var BOTH = Keyword("BOTH");
         var APPLY = Keyword("APPLY");
         var TIMESTAMPTZ = Keyword("TIMESTAMPTZ");
+        var PROCEDURE = Keyword("PROCEDURE");
+        var CALL = Keyword("CALL");
+        var EXEC = Keyword("EXEC").Or(Keyword("EXECUTE"));
+        var BEGIN = Keyword("BEGIN");
+        var ATOMIC = Keyword("ATOMIC");
+        var DECLARE = Keyword("DECLARE");
+        var OUTPUT = Keyword("OUTPUT");
+        var OUT = Keyword("OUT");
+        var INOUT = Keyword("INOUT");
+        var LANGUAGE = Keyword("LANGUAGE");
+        var LEAVE = Keyword("LEAVE");
+        var WHILE = Keyword("WHILE");
+        var LOOP = Keyword("LOOP");
+        var DO = Keyword("DO");
+        var BREAK = Keyword("BREAK");
+        var CONTINUE = Keyword("CONTINUE");
+        var EXIT = Keyword("EXIT");
+        var ITERATE = Keyword("ITERATE");
 
         var reservedWords = CreateReservedWords(syntax);
 
@@ -250,6 +272,7 @@ public static class SqlParser
         var tableSource = Deferred<TableSource>();
         var windowSpecification = Deferred<ParsedWindow>();
         var withinGroupOrderBy = Deferred<IReadOnlyList<OrderByItem>>();
+        var proceduralStatement = Deferred<SqlStatement>();
 
         var number = Terms.Decimal().Then<SqlExpression>(value =>
             decimal.Truncate(value) == value
@@ -1385,6 +1408,385 @@ public static class SqlParser
             .And(Separated(comma, alterTableAction))
             .Then<SqlStatement>(value => new AlterTableStatement(value.Item1, value.Item2));
 
+        Parser<SqlStatement> procedure = Fail<SqlStatement>();
+        Parser<SqlStatement> procedural = Fail<SqlStatement>();
+        if (syntax.SupportsStoredProcedures || syntax.SupportsAnonymousProceduralBlocks)
+        {
+            var atIdentifier = Terms.Char('@').SkipAnd(parameterIdentifier);
+            var parameterMode = IN.SkipAnd(OUT).Then(ProcedureParameterMode.InOut)
+                .Or(INOUT.Then(ProcedureParameterMode.InOut))
+                .Or(OUT.Then(ProcedureParameterMode.Out))
+                .Or(IN.Then(ProcedureParameterMode.In));
+            var procedureDefault = DEFAULT.Or(Terms.Char('=').Then("="))
+                .SkipAnd(expression)
+                .Optional();
+            var standardParameter = parameterMode.Optional()
+                .And(simpleIdentifier)
+                .And(dataType)
+                .And(procedureDefault)
+                .Then(value => new ProcedureParameter(
+                    value.Item2,
+                    value.Item3,
+                    value.Item1.HasValue ? value.Item1.Value : ProcedureParameterMode.In,
+                    value.Item4.HasValue ? value.Item4.Value : null));
+            var oracleParameter = simpleIdentifier
+                .And(parameterMode.Optional())
+                .And(dataType)
+                .And(procedureDefault)
+                .Then(value => new ProcedureParameter(
+                    value.Item1,
+                    value.Item3,
+                    value.Item2.HasValue ? value.Item2.Value : ProcedureParameterMode.In,
+                    value.Item4.HasValue ? value.Item4.Value : null));
+            var tSqlParameter = atIdentifier
+                .And(dataType)
+                .And(Terms.Char('=').SkipAnd(expression).Optional())
+                .And(OUT.Or(OUTPUT).Optional())
+                .Then(value => new ProcedureParameter(
+                    value.Item1,
+                    value.Item2,
+                    value.Item4.HasValue ? ProcedureParameterMode.Out : ProcedureParameterMode.In,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+
+            var standardVariable = simpleIdentifier
+                .And(dataType)
+                .And(Terms.Text(":=").Or(DEFAULT).SkipAnd(expression).Optional())
+                .Then(value => new LocalVariable(
+                    value.Item1,
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+            var declaredVariable = DECLARE.SkipAnd(simpleIdentifier)
+                .And(dataType)
+                .And(Terms.Text(":=").Or(DEFAULT).Or(Terms.Char('=').Then("="))
+                    .SkipAnd(expression).Optional())
+                .Then(value => new LocalVariable(
+                    value.Item1,
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+            var tSqlVariable = DECLARE.SkipAnd(atIdentifier)
+                .And(dataType)
+                .And(Terms.Char('=').SkipAnd(expression).Optional())
+                .Then(value => new LocalVariable(
+                    value.Item1,
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+
+            var bodyStatements = Separated(semicolon, proceduralStatement)
+                .AndSkip(semicolon.Optional());
+            var tSqlIf = IF.SkipAnd(expression)
+                .AndSkip(BEGIN)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .And(ELSE.SkipAnd(BEGIN).SkipAnd(bodyStatements).AndSkip(END).Optional())
+                .Then<SqlStatement>(value => new ProceduralIfStatement(
+                    value.Item1,
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+            var standardIf = IF.SkipAnd(expression)
+                .AndSkip(THEN)
+                .And(bodyStatements)
+                .And(ELSE.SkipAnd(bodyStatements).Optional())
+                .AndSkip(END)
+                .AndSkip(IF)
+                .Then<SqlStatement>(value => new ProceduralIfStatement(
+                    value.Item1,
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+
+            var tSqlWhile = WHILE.SkipAnd(expression)
+                .AndSkip(BEGIN)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .Then<SqlStatement>(value => new ProceduralWhileStatement(value.Item1, value.Item2));
+            var loopWhile = WHILE.SkipAnd(expression)
+                .AndSkip(LOOP)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .AndSkip(LOOP)
+                .Then<SqlStatement>(value => new ProceduralWhileStatement(value.Item1, value.Item2));
+            var doWhile = simpleIdentifier.AndSkip(Terms.Char(':')).Optional()
+                .AndSkip(WHILE)
+                .And(expression)
+                .AndSkip(DO)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .AndSkip(WHILE)
+                .And(simpleIdentifier.Optional())
+                .Then<SqlStatement>(value => new ProceduralWhileStatement(value.Item2, value.Item3)
+                {
+                    SourceLabel = value.Item1.HasValue ? value.Item1.Value : null,
+                    SourceEndLabel = value.Item4.HasValue ? value.Item4.Value : null,
+                });
+            var proceduralReturn = Keyword("RETURN").Then<SqlStatement>(new ProceduralReturnStatement());
+            var proceduralLeave = LEAVE.SkipAnd(simpleIdentifier).Then<SqlStatement>(label =>
+                    label.Value.Equals("cyqwel_body", StringComparison.OrdinalIgnoreCase)
+                        ? new ProceduralReturnStatement()
+                        : new ProceduralBreakStatement { SourceTargetLabel = label });
+            var proceduralBreak = BREAK.Then<SqlStatement>(new ProceduralBreakStatement());
+            var proceduralExit = EXIT.SkipAnd(simpleIdentifier.Optional())
+                .Then<SqlStatement>(label => new ProceduralBreakStatement
+                {
+                    SourceTargetLabel = label.HasValue ? label.Value : null,
+                });
+            var proceduralContinue = CONTINUE.Then<SqlStatement>(new ProceduralContinueStatement());
+            var proceduralLabeledContinue = CONTINUE.SkipAnd(simpleIdentifier.Optional())
+                .Then<SqlStatement>(label => new ProceduralContinueStatement
+                {
+                    SourceTargetLabel = label.HasValue ? label.Value : null,
+                });
+            var proceduralIterate = ITERATE.SkipAnd(simpleIdentifier)
+                .Then<SqlStatement>(label => new ProceduralContinueStatement
+                {
+                    SourceTargetLabel = label,
+                });
+
+            var proceduralControlFlow = new List<Parser<SqlStatement>>();
+            if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch))
+            {
+                proceduralControlFlow.Add(tSqlIf);
+                proceduralControlFlow.Add(tSqlWhile);
+                proceduralControlFlow.Add(proceduralReturn);
+                proceduralControlFlow.Add(proceduralBreak);
+                proceduralControlFlow.Add(proceduralContinue);
+            }
+            if (routineGrammar.HasFlag(RoutineGrammar.Atomic))
+            {
+                proceduralControlFlow.Add(standardIf);
+                proceduralControlFlow.Add(doWhile);
+                proceduralControlFlow.Add(proceduralReturn);
+                proceduralControlFlow.Add(proceduralLeave);
+                proceduralControlFlow.Add(proceduralIterate);
+            }
+            if (routineGrammar.HasFlag(RoutineGrammar.Labeled))
+            {
+                proceduralControlFlow.Add(standardIf);
+                proceduralControlFlow.Add(doWhile);
+                proceduralControlFlow.Add(proceduralLeave);
+                proceduralControlFlow.Add(proceduralIterate);
+            }
+            if (routineGrammar.HasFlag(RoutineGrammar.DollarQuoted)
+                || routineGrammar.HasFlag(RoutineGrammar.DeclarationFirst))
+            {
+                proceduralControlFlow.Add(standardIf);
+                proceduralControlFlow.Add(loopWhile);
+                proceduralControlFlow.Add(proceduralReturn);
+                proceduralControlFlow.Add(proceduralExit);
+                proceduralControlFlow.Add(proceduralLabeledContinue);
+            }
+
+            proceduralStatement.Parser = OneOf(proceduralControlFlow.ToArray())
+                .Or(query.Then<SqlStatement>(value => value))
+                .Or(grant)
+                .Or(setSessionAuthorization)
+                .Or(setIdentityInsert)
+                .Or(setStatistics)
+                .Or(insert)
+                .Or(update)
+                .Or(delete)
+                .Or(merge)
+                .Or(createTable)
+                .Or(createView)
+                .Or(createIndex)
+                .Or(createSequence)
+                .Or(alterSequence)
+                .Or(alterTable)
+                .Or(dropStatement)
+                .Or(truncateStatement);
+
+            var standardBody = BEGIN.SkipAnd(ATOMIC.Optional())
+                .SkipAnd(ZeroOrMany(declaredVariable.AndSkip(semicolon)))
+                .And(bodyStatements)
+                .AndSkip(END)
+                .Then(value => new ProceduralBlock(value.Item1, value.Item2));
+            var tSqlBody = AS.SkipAnd(BEGIN)
+                .SkipAnd(ZeroOrMany(tSqlVariable.AndSkip(semicolon)))
+                .And(bodyStatements)
+                .AndSkip(END)
+                .Then(value => new ProceduralBlock(value.Item1, value.Item2));
+            var postgreSqlBody = LANGUAGE.SkipAnd(Keyword("plpgsql"))
+                .SkipAnd(AS)
+                .SkipAnd(Terms.Text(ProceduralDollarQuotes.Tag))
+                .SkipAnd(DECLARE.SkipAnd(ZeroOrMany(standardVariable.AndSkip(semicolon))).Optional())
+                .AndSkip(BEGIN)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .AndSkip(Terms.Text(ProceduralDollarQuotes.Tag))
+                .Then(value => new ProceduralBlock(
+                    value.Item1.HasValue ? value.Item1.Value : Array.Empty<LocalVariable>(),
+                    value.Item2));
+            var mySqlBody = Keyword("cyqwel_body").AndSkip(Terms.Char(':')).Optional()
+                .SkipAnd(BEGIN)
+                .SkipAnd(ZeroOrMany(declaredVariable.AndSkip(semicolon)))
+                .And(bodyStatements)
+                .AndSkip(END)
+                .And(Keyword("cyqwel_body").Optional())
+                .Then(value => new ProceduralBlock(value.Item1, value.Item2));
+            var oracleBody = AS.SkipAnd(ZeroOrMany(standardVariable.AndSkip(semicolon)))
+                .AndSkip(BEGIN)
+                .And(bodyStatements)
+                .AndSkip(END)
+                .Then(value => new ProceduralBlock(value.Item1, value.Item2));
+
+            if (syntax.SupportsAnonymousProceduralBlocks)
+            {
+                var anonymousBlocks = new List<Parser<SqlStatement>>();
+                if (routineGrammar.HasFlag(RoutineGrammar.Atomic))
+                {
+                    anonymousBlocks.Add(standardBody.Then<SqlStatement>(value => value));
+                }
+                if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch))
+                {
+                    var tSqlAnonymousBody = BEGIN
+                        .SkipAnd(ZeroOrMany(tSqlVariable.AndSkip(semicolon)))
+                        .And(bodyStatements)
+                        .AndSkip(END)
+                        .Then<SqlStatement>(value => new ProceduralBlock(value.Item1, value.Item2));
+                    anonymousBlocks.Add(tSqlAnonymousBody);
+                    anonymousBlocks.Add(tSqlIf);
+                    anonymousBlocks.Add(tSqlWhile);
+                    anonymousBlocks.Add(proceduralReturn);
+                }
+                if (routineGrammar.HasFlag(RoutineGrammar.DollarQuoted))
+                {
+                    var postgreSqlAnonymousBody = DO
+                        .SkipAnd(LANGUAGE.SkipAnd(Keyword("plpgsql")))
+                        .SkipAnd(Terms.Text(ProceduralDollarQuotes.Tag))
+                        .SkipAnd(DECLARE.SkipAnd(ZeroOrMany(standardVariable.AndSkip(semicolon))).Optional())
+                        .AndSkip(BEGIN)
+                        .And(bodyStatements)
+                        .AndSkip(END)
+                        .AndSkip(Terms.Text(ProceduralDollarQuotes.Tag))
+                        .Then<SqlStatement>(value => new ProceduralBlock(
+                            value.Item1.HasValue ? value.Item1.Value : Array.Empty<LocalVariable>(),
+                            value.Item2));
+                    anonymousBlocks.Add(postgreSqlAnonymousBody);
+                }
+                if (routineGrammar.HasFlag(RoutineGrammar.DeclarationFirst))
+                {
+                    var oracleAnonymousBody = DECLARE
+                        .SkipAnd(ZeroOrMany(standardVariable.AndSkip(semicolon)))
+                        .AndSkip(BEGIN)
+                        .And(bodyStatements)
+                        .AndSkip(END)
+                        .Then<SqlStatement>(value => new ProceduralBlock(value.Item1, value.Item2))
+                        .Or(BEGIN.SkipAnd(bodyStatements)
+                            .AndSkip(END)
+                            .Then<SqlStatement>(value => new ProceduralBlock([], value)));
+                    anonymousBlocks.Add(oracleAnonymousBody);
+                }
+                procedural = OneOf(anonymousBlocks.ToArray()).Then(statement =>
+                    statement is ProceduralBlock block
+                        ? NormalizeLocalReferences([], block, routineGrammar)
+                        : statement);
+            }
+
+            if (syntax.SupportsStoredProcedures)
+            {
+                var definitions = new List<Parser<ParsedProcedureDefinition>>();
+                if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch))
+                {
+                    var parameters = Separated(comma, tSqlParameter);
+                    definitions.Add(CREATE.SkipAnd(OR.SkipAnd(ALTER).Optional())
+                        .AndSkip(PROCEDURE)
+                        .And(tableName)
+                        .And(parameters)
+                        .And(tSqlBody)
+                        .Then(value => new ParsedProcedureDefinition(
+                            value.Item2,
+                            value.Item3,
+                            value.Item4,
+                            value.Item1.HasValue)));
+                    definitions.Add(ALTER.SkipAnd(PROCEDURE)
+                        .SkipAnd(tableName)
+                        .And(parameters)
+                        .And(tSqlBody)
+                        .Then(value => new ParsedProcedureDefinition(
+                            value.Item1, value.Item2, value.Item3, true)));
+                }
+
+                void AddCreateDefinition(
+                    RoutineGrammar grammar,
+                    Parser<ProcedureParameter> parameterParser,
+                    Parser<ProceduralBlock> bodyParser,
+                    bool allowReplace,
+                    bool parametersRequired = true)
+                {
+                    if (!routineGrammar.HasFlag(grammar)) return;
+                    var replace = allowReplace
+                        ? OR.SkipAnd(REPLACE).Optional()
+                        : Fail<string>().Optional();
+                    var parameterList = Separated(comma, parameterParser)
+                        .Optional()
+                        .Then(value => value.HasValue
+                            ? value.Value
+                            : Array.Empty<ProcedureParameter>());
+                    Parser<IReadOnlyList<ProcedureParameter>> parameters = parametersRequired
+                        ? Between(leftParenthesis, parameterList, rightParenthesis)
+                        : Between(leftParenthesis, parameterList, rightParenthesis)
+                            .Optional()
+                            .Then(value => value.HasValue
+                                ? value.Value
+                                : Array.Empty<ProcedureParameter>());
+                    definitions.Add(CREATE.SkipAnd(replace)
+                        .AndSkip(PROCEDURE)
+                        .And(tableName)
+                        .And(parameters)
+                        .And(bodyParser)
+                        .Then(value => new ParsedProcedureDefinition(
+                            value.Item2,
+                            value.Item3,
+                            value.Item4,
+                            value.Item1.HasValue)));
+                }
+
+                AddCreateDefinition(RoutineGrammar.Atomic, standardParameter, standardBody, true);
+                AddCreateDefinition(RoutineGrammar.DollarQuoted, standardParameter, postgreSqlBody, true);
+                AddCreateDefinition(RoutineGrammar.Labeled, standardParameter, mySqlBody, false);
+                AddCreateDefinition(RoutineGrammar.DeclarationFirst, oracleParameter, oracleBody, true, false);
+
+                var createOrReplace = OneOf(definitions.ToArray())
+                    .Then<SqlStatement>(definition => BuildProcedureDefinition(definition, routineGrammar));
+                var dropProcedure = DROP.SkipAnd(PROCEDURE)
+                .SkipAnd(IF.SkipAnd(EXISTS).Optional())
+                .And(tableName)
+                .And(Between(leftParenthesis, Separated(comma, dataType), rightParenthesis).Optional())
+                .Then<SqlStatement>(value => new DropProcedureStatement(
+                    value.Item2,
+                    value.Item3.HasValue ? value.Item3.Value : null,
+                    value.Item1.HasValue));
+
+                var positionalArgument = expression
+                    .And(OUT.Or(OUTPUT).Optional())
+                    .Then(value => new ProcedureArgument(value.Item1, IsOutput: value.Item2.HasValue));
+                var mySqlOutputArgument = atIdentifier.Then(value =>
+                    new ProcedureArgument(new LocalVariableExpression(value), IsOutput: true));
+                var standardNamedArgument = simpleIdentifier.AndSkip(Terms.Text("=>"))
+                    .And(expression)
+                    .Then(value => new ProcedureArgument(value.Item2, value.Item1));
+                var tSqlNamedArgument = atIdentifier.AndSkip(Terms.Char('='))
+                    .And(expression)
+                    .And(OUT.Or(OUTPUT).Optional())
+                    .Then(value => new ProcedureArgument(value.Item2, value.Item1, value.Item3.HasValue));
+                var standardCall = CALL.SkipAnd(tableName)
+                    .And(Between(leftParenthesis,
+                        Separated(comma, standardNamedArgument.Or(mySqlOutputArgument).Or(positionalArgument))
+                            .Optional()
+                            .Then(value => value.HasValue
+                                ? value.Value
+                                : Array.Empty<ProcedureArgument>()),
+                        rightParenthesis))
+                    .Then<SqlStatement>(value => new CallProcedureStatement(value.Item1, value.Item2));
+                var tSqlCall = EXEC.SkipAnd(tableName)
+                    .And(Separated(comma, tSqlNamedArgument.Or(positionalArgument)))
+                    .Then<SqlStatement>(value => new CallProcedureStatement(value.Item1, value.Item2));
+
+                var calls = new List<Parser<SqlStatement>>();
+                if ((routineGrammar & ~RoutineGrammar.AtPrefixedBatch) != 0) calls.Add(standardCall);
+                if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch)) calls.Add(tSqlCall);
+                procedure = createOrReplace.Or(dropProcedure).Or(OneOf(calls.ToArray()));
+            }
+        }
+
         Parser<SqlStatement> explain;
         if (syntax.SupportsExplainOptions)
         {
@@ -1435,6 +1837,8 @@ public static class SqlParser
             .Or(setIdentityInsert)
             .Or(setStatistics);
         var statement = explain
+            .Or(procedure)
+            .Or(procedural)
             .Or(query.Then<SqlStatement>(value => value))
             .Or(grant)
             .Or(setStatement)
@@ -1489,9 +1893,9 @@ public static class SqlParser
         var parser = selectedDialect.ParserOptions == SqlDialectParserOptions.Permissive
             ? PermissiveParser
             : ParserCache.GetOrAdd(
-                selectedDialect.ParserOptions,
-                static syntax => new(
-                    () => CreateDocumentParser(syntax),
+                new ParserCacheKey(selectedDialect.ParserOptions, selectedDialect.RoutineGrammar),
+                static key => new(
+                    () => CreateDocumentParser(key.Options, key.RoutineGrammar),
                     LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         if (sql.Length > options.MaximumInputLength)
@@ -1503,6 +1907,30 @@ public static class SqlParser
                 1,
                 1,
                 SqlParseErrorCode.InputTooLarge);
+            return false;
+        }
+
+        if (!selectedDialect.SupportsStoredProcedures && LooksLikeStoredProcedure(sql))
+        {
+            document = null;
+            error = new SqlParseError(
+                $"SQL syntax is not supported by the '{selectedDialect.Name}' dialect.",
+                0,
+                1,
+                1,
+                SqlParseErrorCode.DialectIncompatible);
+            return false;
+        }
+
+        if (!selectedDialect.SupportsAnonymousProceduralBlocks && LooksLikeAnonymousProceduralBlock(sql))
+        {
+            document = null;
+            error = new SqlParseError(
+                $"SQL syntax is not supported by the '{selectedDialect.Name}' dialect.",
+                0,
+                1,
+                1,
+                SqlParseErrorCode.DialectIncompatible);
             return false;
         }
 
@@ -1558,6 +1986,30 @@ public static class SqlParser
     }
 
     private static Parser<string> Keyword(string value) => Terms.Keyword(value, caseInsensitive: true);
+
+    private static bool LooksLikeStoredProcedure(string sql)
+    {
+        var value = sql.AsSpan().TrimStart();
+        return value.StartsWith("CALL ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CALL(", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("EXEC ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("EXECUTE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CREATE PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CREATE PROC ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CREATE OR REPLACE PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CREATE OR ALTER PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("ALTER PROCEDURE ", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DROP PROCEDURE ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeAnonymousProceduralBlock(string sql)
+    {
+        var value = sql.AsSpan().TrimStart();
+        return value.StartsWith("BEGIN ATOMIC", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DO LANGUAGE PLPGSQL", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DECLARE", StringComparison.OrdinalIgnoreCase);
+    }
+
 
     private static HashSet<string> CreateReservedWords(SqlDialectParserOptions syntax)
     {
@@ -1619,6 +2071,15 @@ public static class SqlParser
             words.UnionWith(["SQL", "SECURITY", "DEFINER", "INVOKER"]);
         }
 
+        if (syntax.SupportsStoredProcedures || syntax.SupportsAnonymousProceduralBlocks)
+        {
+            words.UnionWith([
+                "PROCEDURE", "EXEC", "EXECUTE", "BEGIN", "ATOMIC", "DECLARE",
+                "OUTPUT", "OUT", "INOUT", "LANGUAGE", "RETURN", "LEAVE",
+                "WHILE", "LOOP", "DO", "BREAK", "CONTINUE", "EXIT", "ITERATE",
+            ]);
+        }
+
         if (syntax.SupportsNullOrdering)
         {
             words.UnionWith(["NULLS", "FIRST", "LAST"]);
@@ -1643,11 +2104,60 @@ public static class SqlParser
 
     private sealed record ParsedExplainTarget(SqlQuery Query, bool IsParenthesized);
 
+    private sealed record ParsedProcedureDefinition(
+        TableName Name,
+        IReadOnlyList<ProcedureParameter> Parameters,
+        ProceduralBlock Body,
+        bool Replace);
+
+    private static SqlStatement BuildProcedureDefinition(
+        ParsedProcedureDefinition definition,
+        RoutineGrammar routineGrammar)
+    {
+        var normalized = NormalizeProcedureReferences(definition, routineGrammar);
+        return definition.Replace
+            ? new ReplaceProcedureStatement(definition.Name, definition.Parameters, normalized)
+            : new CreateProcedureStatement(definition.Name, definition.Parameters, normalized);
+    }
+
+    private static ProceduralBlock NormalizeProcedureReferences(
+        ParsedProcedureDefinition definition,
+        RoutineGrammar routineGrammar)
+        => NormalizeLocalReferences(definition.Parameters, definition.Body, routineGrammar);
+
+    private static ProceduralBlock NormalizeLocalReferences(
+        IReadOnlyList<ProcedureParameter> parameters,
+        ProceduralBlock block,
+        RoutineGrammar routineGrammar)
+    {
+        var names = parameters.Select(static parameter => parameter.Name.Value)
+            .Concat(block.Variables.Select(static variable => variable.Name.Value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new LocalReferenceRewriter(
+            names,
+            rewriteColumns: routineGrammar != RoutineGrammar.AtPrefixedBatch).Visit(block);
+    }
+
+    private sealed class LocalReferenceRewriter(
+        IReadOnlySet<string> names,
+        bool rewriteColumns) : SqlRewriter
+    {
+        protected override SqlNode VisitParameter(ParameterExpression node) =>
+            names.Contains(node.Name) ? new LocalVariableExpression(node.Name) { Span = node.Span } : node;
+
+        protected override SqlNode VisitColumn(ColumnExpression node) =>
+            rewriteColumns && node.Parts.Count == 1 && names.Contains(node.Parts[0].Value)
+                ? new LocalVariableExpression(node.Parts[0]) { Span = node.Span }
+                : node;
+    }
+
     private static bool TryGetDialectCompatibilityError(
         SqlDocument document,
         SqlDialect dialect,
         out string error)
     {
+        if (!TryValidateProceduralLabels(document.Statements, [], out error)) return true;
+
         if (dialect.RequiresOrderByForOffset)
         {
             foreach (var select in document.FindAll<SelectStatement>())
@@ -1669,9 +2179,96 @@ public static class SqlParser
             }
         }
 
+        if (!dialect.SupportsProcedureParameterDefaults)
+        {
+            if (document.FindAll<ProcedureParameter>().Any(static parameter => parameter.Default is not null))
+            {
+                error = $"{dialect.Name} cannot represent stored procedure parameter defaults.";
+                return true;
+            }
+        }
+
+        if (!dialect.SupportsNamedProcedureArguments
+            && document.FindAll<ProcedureArgument>().Any(static argument => argument.Name is not null))
+        {
+            error = $"{dialect.Name} cannot represent named stored procedure arguments.";
+            return true;
+        }
+
         error = "";
         return false;
     }
+
+    private static bool TryValidateProceduralLabels(
+        IReadOnlyList<SqlStatement> statements,
+        List<string?> loopLabels,
+        out string error)
+    {
+        foreach (var statement in statements)
+        {
+            switch (statement)
+            {
+                case CreateProcedureStatement create:
+                    if (!TryValidateProceduralLabels(create.Body.Statements, [], out error)) return false;
+                    break;
+                case ReplaceProcedureStatement replace:
+                    if (!TryValidateProceduralLabels(replace.Body.Statements, [], out error)) return false;
+                    break;
+                case ProceduralBlock block:
+                    if (!TryValidateProceduralLabels(block.Statements, [], out error)) return false;
+                    break;
+                case ProceduralIfStatement procedureIf:
+                    if (!TryValidateProceduralLabels(procedureIf.Then, loopLabels, out error)) return false;
+                    if (procedureIf.Else is not null
+                        && !TryValidateProceduralLabels(procedureIf.Else, loopLabels, out error)) return false;
+                    break;
+                case ProceduralWhileStatement procedureWhile:
+                    {
+                        var startLabel = procedureWhile.SourceLabel?.Value;
+                        var endLabel = procedureWhile.SourceEndLabel?.Value;
+                        if (endLabel is not null
+                            && !string.Equals(startLabel, endLabel, StringComparison.OrdinalIgnoreCase))
+                        {
+                            error = $"WHILE end label '{endLabel}' does not match its opening label.";
+                            return false;
+                        }
+
+                        loopLabels.Add(startLabel);
+                        var valid = TryValidateProceduralLabels(
+                            procedureWhile.Statements,
+                            loopLabels,
+                            out error);
+                        loopLabels.RemoveAt(loopLabels.Count - 1);
+                        if (!valid) return false;
+                        break;
+                    }
+                case ProceduralBreakStatement procedureBreak:
+                    if (!TargetsInnermostLoop(procedureBreak.SourceTargetLabel, loopLabels))
+                    {
+                        error = "Labeled loop control must target the innermost WHILE loop.";
+                        return false;
+                    }
+                    break;
+                case ProceduralContinueStatement procedureContinue:
+                    if (!TargetsInnermostLoop(procedureContinue.SourceTargetLabel, loopLabels))
+                    {
+                        error = "Labeled loop control must target the innermost WHILE loop.";
+                        return false;
+                    }
+                    break;
+            }
+        }
+
+        error = "";
+        return true;
+    }
+
+    private static bool TargetsInnermostLoop(
+        SqlIdentifier? target,
+        IReadOnlyList<string?> loopLabels) =>
+        target is null
+        || loopLabels.Count > 0
+        && string.Equals(target.Value, loopLabels[^1], StringComparison.OrdinalIgnoreCase);
 
     private static SqlParseError ToParseError(
         string message,
