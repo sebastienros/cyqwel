@@ -211,9 +211,10 @@ public static class SqlValidator
     {
         foreach (var statement in document.Statements)
         {
-            if (statement is ProceduralBreakStatement or ProceduralContinueStatement
-                || !dialect.SupportsTopLevelProceduralControlFlow
-                && statement is (ProceduralIfStatement
+            if (!dialect.SupportsTopLevelProceduralControlFlow
+                && statement is (ProceduralBreakStatement
+                    or ProceduralContinueStatement
+                    or ProceduralIfStatement
                     or ProceduralWhileStatement
                     or ProceduralReturnStatement))
             {

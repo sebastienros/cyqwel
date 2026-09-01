@@ -254,6 +254,11 @@ public sealed class StoredProcedureTests
         var exception = Assert.Throws<SqlParseException>(() =>
             SqlDialects.Sqlite.Parse("CALL p()"));
         Assert.Equal(SqlParseErrorCode.DialectIncompatible, exception.Error.Code);
+
+        var unsupportedDialect = new SqlDialect("custom-defaults");
+        var embeddedException = Assert.Throws<SqlParseException>(() =>
+            unsupportedDialect.Parse("SELECT 1; CALL p()"));
+        Assert.Equal(SqlParseErrorCode.DialectIncompatible, embeddedException.Error.Code);
     }
 
     [Fact]
@@ -353,8 +358,8 @@ public sealed class StoredProcedureTests
     public void Validation_rejects_loop_control_outside_while()
     {
         var result = SqlValidator.Validate(
-            "CREATE PROCEDURE p(IN x INT) BEGIN ATOMIC BREAK; CONTINUE; END",
-            SqlDialects.Generic,
+            "CREATE PROCEDURE p() LANGUAGE PLPGSQL AS $cyqwel$ BEGIN EXIT; CONTINUE; END $cyqwel$",
+            SqlDialects.PostgreSql,
             new SqlValidationOptions { Semantic = true });
 
         Assert.Equal(2, result.Diagnostics.Count(diagnostic =>

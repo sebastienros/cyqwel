@@ -89,6 +89,9 @@ internal sealed class SchemaValidationEngine
                 case ProceduralWhileStatement procedureWhile:
                     ValidateProceduralBlock(new ProceduralBlock([], procedureWhile.Statements), ctes);
                     break;
+                case ProceduralBlock block:
+                    ValidateProceduralBlock(block, ctes);
+                    break;
             }
         }
     }

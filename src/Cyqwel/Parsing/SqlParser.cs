@@ -1891,12 +1891,13 @@ public static class SqlParser
         options ??= SqlParseOptions.Default;
         var selectedDialect = dialect ?? SqlDialects.Generic;
         var parser = selectedDialect.ParserOptions == SqlDialectParserOptions.Permissive
-            ? PermissiveParser
-            : ParserCache.GetOrAdd(
-                new ParserCacheKey(selectedDialect.ParserOptions, selectedDialect.RoutineGrammar),
-                static key => new(
-                    () => CreateDocumentParser(key.Options, key.RoutineGrammar),
-                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+            && selectedDialect.RoutineGrammar == RoutineGrammar.None
+                ? PermissiveParser
+                : ParserCache.GetOrAdd(
+                    new ParserCacheKey(selectedDialect.ParserOptions, selectedDialect.RoutineGrammar),
+                    static key => new(
+                        () => CreateDocumentParser(key.Options, key.RoutineGrammar),
+                        LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         if (sql.Length > options.MaximumInputLength)
         {
@@ -2135,7 +2136,7 @@ public static class SqlParser
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return new LocalReferenceRewriter(
             names,
-            rewriteColumns: routineGrammar != RoutineGrammar.AtPrefixedBatch).Visit(block);
+            rewriteColumns: !routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch)).Visit(block);
     }
 
     private sealed class LocalReferenceRewriter(
@@ -2157,6 +2158,23 @@ public static class SqlParser
         out string error)
     {
         if (!TryValidateProceduralLabels(document.Statements, [], out error)) return true;
+
+        if (!dialect.SupportsStoredProcedures
+            && (document.FindAll<CreateProcedureStatement>().Any()
+                || document.FindAll<ReplaceProcedureStatement>().Any()
+                || document.FindAll<DropProcedureStatement>().Any()
+                || document.FindAll<CallProcedureStatement>().Any()))
+        {
+            error = $"{dialect.Name} does not support stored procedures.";
+            return true;
+        }
+
+        if (!dialect.SupportsAnonymousProceduralBlocks
+            && document.Statements.OfType<ProceduralBlock>().Any())
+        {
+            error = $"{dialect.Name} does not support anonymous procedural blocks.";
+            return true;
+        }
 
         if (dialect.RequiresOrderByForOffset)
         {
