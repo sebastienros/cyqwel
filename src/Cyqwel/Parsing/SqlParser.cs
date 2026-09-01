@@ -678,8 +678,7 @@ public static class SqlParser
                 .Then(value => (Start: value.Item1, End: (WindowFrameBound?)value.Item2))
                 .Or(windowFrameBound.Then(value => (Start: value, End: (WindowFrameBound?)null))))
             .Then(value => new WindowFrame(value.Item1, value.Item2.Start, value.Item2.End));
-        var baseWindowIdentifier = simpleIdentifier.When(
-            (_, identifier) => !identifier.Value.Equals("PARTITION", StringComparison.OrdinalIgnoreCase));
+        var baseWindowIdentifier = Not(PARTITION).SkipAnd(simpleIdentifier);
         var namedWindowSpecification = baseWindowIdentifier
             .And(windowPartitionBy.Optional())
             .And(windowOrderBy.Optional())
@@ -941,17 +940,21 @@ public static class SqlParser
                     value.Item1.Value.IsRecursive)
                 : value.Item2);
 
-        var parsedReturning = RETURNING.SkipAnd(Separated(comma, expression))
-            .And(INTO.SkipAnd(Separated(comma, expression)).Optional())
-            .Then(value => new ParsedReturning(
-                value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : null));
-        Parser<ParsedReturning?> returning = syntax.SupportsReturning
-            ? parsedReturning
-                .When((_, value) => value.Into is null || syntax.SupportsReturningInto)
+        Parser<ParsedReturning?> returning = Always<ParsedReturning?>(null);
+        if (syntax.SupportsReturning)
+        {
+            var returningExpressions = RETURNING.SkipAnd(Separated(comma, expression));
+            var parsedReturning = syntax.SupportsReturningInto
+                ? returningExpressions
+                    .And(INTO.SkipAnd(Separated(comma, expression)).Optional())
+                    .Then(value => new ParsedReturning(
+                        value.Item1,
+                        value.Item2.HasValue ? value.Item2.Value : null))
+                : returningExpressions.Then(value => new ParsedReturning(value, null));
+            returning = parsedReturning
                 .Then<ParsedReturning?>(value => value)
-                .Or(Always<ParsedReturning?>(null))
-            : Always<ParsedReturning?>(null);
+                .Or(Always<ParsedReturning?>(null));
+        }
         var grant = GRANT.SkipAnd(Separated(comma, simpleIdentifier))
             .AndSkip(TO)
             .And(Separated(comma, simpleIdentifier))
@@ -985,20 +988,21 @@ public static class SqlParser
                 [value.Item2]));
         var insertColumns = Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis);
         var insertValues = VALUES.SkipAnd(Separated(comma, valueRow));
+        var insertSource = insertValues
+            .Then(value => new ParsedInsertSource(value, null))
+            .Or(query.Then(value => new ParsedInsertSource(null, value)));
         var insert = INSERT.SkipAnd(INTO)
             .SkipAnd(tableName)
             .And(insertColumns.Optional())
-            .And(insertValues.Optional())
-            .And(query.Optional())
+            .And(insertSource)
             .And(returning)
-            .When((_, value) => value.Item3.HasValue || value.Item4.HasValue)
             .Then<SqlStatement>(value => new InsertStatement(
                 value.Item1,
                 value.Item2.HasValue ? value.Item2.Value : null,
-                value.Item3.HasValue ? value.Item3.Value : null,
-                value.Item4.HasValue ? value.Item4.Value : null,
-                value.Item5?.Expressions,
-                value.Item5?.Into));
+                value.Item3.Values,
+                value.Item3.Query,
+                value.Item4?.Expressions,
+                value.Item4?.Into));
 
         var assignment = column.AndSkip(Terms.Char('=')).And(expression)
             .Then(value => new Assignment((ColumnExpression)value.Item1, value.Item2));
@@ -2629,6 +2633,10 @@ public static class SqlParser
     private sealed record ParsedReturning(
         IReadOnlyList<SqlExpression> Expressions,
         IReadOnlyList<SqlExpression>? Into);
+
+    private readonly record struct ParsedInsertSource(
+        IReadOnlyList<IReadOnlyList<SqlExpression>>? Values,
+        SqlQuery? Query);
 
     private enum ParsedColumnModifierKind
     {

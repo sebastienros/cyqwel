@@ -325,6 +325,22 @@ public class ParserTests
     }
 
     [Fact]
+    public void Quoted_partition_is_valid_as_a_base_window_name()
+    {
+        var document = SqlDialects.PostgreSql.Parse(
+            """SELECT SUM(amount) OVER ("partition" ORDER BY created_at) FROM ledger""");
+
+        Assert.Single(document.Statements);
+    }
+
+    [Fact]
+    public void Insert_requires_exactly_one_source()
+    {
+        Assert.Throws<SqlParseException>(() =>
+            SqlParser.Parse("INSERT INTO archive VALUES (1) SELECT id FROM users"));
+    }
+
+    [Fact]
     public void Requires_semicolons_between_statements()
     {
         Assert.Throws<SqlParseException>(() => SqlParser.Parse("SELECT 1 SELECT 2"));
