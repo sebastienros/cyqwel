@@ -207,6 +207,36 @@ advanced joins, `EXPLAIN`, `MERGE`, `UPDATE FROM`, `DELETE USING`,
 Builder helpers only expose forms that can be parsed by at least one built-in
 dialect, so generated builder SQL can round-trip through the syntax tree.
 
+### Current timestamps
+
+Use `Sql.CurrentTimestamp()` for a dialect-neutral current timestamp:
+
+```csharp
+var query = Sql.SelectItems(new SelectItem(Sql.CurrentTimestamp())).Build();
+
+query.ToSql(SqlDialects.TSql);       // SELECT GETDATE()
+query.ToSql(SqlDialects.PostgreSql); // SELECT CURRENT_TIMESTAMP
+query.ToSql(SqlDialects.Oracle);     // SELECT CURRENT_TIMESTAMP
+```
+
+Generic SQL, MySQL, and SQLite also generate bare `CURRENT_TIMESTAMP`. Parsing
+normalizes bare `CURRENT_TIMESTAMP`, T-SQL `GETDATE()`, PostgreSQL/MySQL `NOW()`,
+and Oracle `SYSDATE` into `CurrentTimestampExpression`. The generic parser accepts
+all these forms. Empty-parenthesis `CURRENT_TIMESTAMP()` is also normalized for
+MySQL and generic SQL.
+
+Oracle `SYSDATE` retains `IsSystemDate = true` and renders back to `SYSDATE` for
+Oracle; other targets use their ordinary current timestamp. This abstraction
+does not guarantee identical clock, timezone, precision, or return-type semantics
+across databases. Oracle queries without `FROM` target Oracle 23+; generation
+does not insert `FROM DUAL`.
+
+Only unquoted, unqualified, no-argument forms without aggregate or window modifiers
+are normalized. Precision-bearing calls remain ordinary function expressions and
+retain their arguments; unsupported timestamp argument forms throw during
+generation unless `UnsupportedBehavior` is `Ignore`. UTC, local-time, date-only,
+and wall-clock functions are not included in this normalization.
+
 ## Stored procedures
 
 Stored procedures can be parsed, inspected, transformed, validated, and generated for T-SQL, PostgreSQL, MySQL,

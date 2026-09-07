@@ -46,6 +46,8 @@ public static class Sql
 
     public static ParameterExpression Param(string name, char prefix = '@') => new(name, prefix);
 
+    public static CurrentTimestampExpression CurrentTimestamp() => new();
+
     public static SqlDocument Document(params SqlStatement[] statements)
     {
         ArgumentNullException.ThrowIfNull(statements);

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using Cyqwel.Ast;
 using Cyqwel.Dialects;
+using Cyqwel.Parsing;
 
 namespace Cyqwel.Generation;
 
@@ -725,7 +726,17 @@ public sealed partial class SqlGenerator
         switch (expression)
         {
             case ColumnExpression column:
-                WriteSeparated(column.Parts, WriteIdentifier, ".");
+                if (column.Parts.Count == 1
+                    && (column.Parts[0].Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
+                        || _dialect.ParserOptions.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.SysDate)
+                            && column.Parts[0].Value.Equals("SYSDATE", StringComparison.OrdinalIgnoreCase)))
+                {
+                    WriteIdentifier(column.Parts[0] with { IsQuoted = true });
+                }
+                else
+                {
+                    WriteSeparated(column.Parts, WriteIdentifier, ".");
+                }
                 break;
             case StarExpression star:
                 if (star.Qualifier is { Count: > 0 })
@@ -738,6 +749,9 @@ public sealed partial class SqlGenerator
                 break;
             case LiteralExpression literal:
                 WriteLiteral(literal);
+                break;
+            case CurrentTimestampExpression timestamp:
+                _builder.Append(_dialect.RenderCurrentTimestamp(timestamp, _options));
                 break;
             case TrimExpression trim:
                 WriteTrim(trim);
@@ -986,14 +1000,23 @@ public sealed partial class SqlGenerator
             return;
         }
 
-        var name = _dialect.GetFunctionName(function.Name.Value);
-        name = _options.FunctionNameCase switch
+        if (function.Name.IsQuoted)
         {
-            FunctionNameCase.Upper => name.ToUpperInvariant(),
-            FunctionNameCase.Lower => name.ToLowerInvariant(),
-            _ => name,
-        };
-        _builder.Append(name).Append('(');
+            WriteIdentifier(function.Name);
+        }
+        else
+        {
+            var name = _dialect.GetFunctionName(function.Name.Value);
+            name = _options.FunctionNameCase switch
+            {
+                FunctionNameCase.Upper => name.ToUpperInvariant(),
+                FunctionNameCase.Lower => name.ToLowerInvariant(),
+                _ => name,
+            };
+            _builder.Append(name);
+        }
+
+        _builder.Append('(');
         if (function.IsDistinct)
         {
             Keyword("DISTINCT");

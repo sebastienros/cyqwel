@@ -126,7 +126,42 @@ public class SqlDialect
     public virtual string? RenderFunction(
         FunctionCallExpression function,
         Func<SqlExpression, string> renderExpression,
-        SqlGenerationOptions options) => null;
+        SqlGenerationOptions options) =>
+        function.Name.Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
+            ? RenderCurrentTimestampFunction(function, options, supportsArguments: true)
+            : null;
+
+    public virtual string RenderCurrentTimestamp(
+        CurrentTimestampExpression timestamp,
+        SqlGenerationOptions options) =>
+        options.UppercaseKeywords ? "CURRENT_TIMESTAMP" : "current_timestamp";
+
+    protected string? RenderCurrentTimestampFunction(
+        FunctionCallExpression function,
+        SqlGenerationOptions options,
+        bool supportsArguments = false)
+    {
+        if (function.Name.IsQuoted
+            || function.IsDistinct
+            || function.Filter is not null
+            || function.WithinGroup is { Count: > 0 })
+        {
+            return null;
+        }
+
+        if (function.Arguments.Count > 0)
+        {
+            if (!supportsArguments && options.UnsupportedBehavior == UnsupportedSqlBehavior.Throw)
+            {
+                throw new NotSupportedException(
+                    $"{Name} does not support arguments to {function.Name.Value}.");
+            }
+
+            return null;
+        }
+
+        return RenderCurrentTimestamp(new CurrentTimestampExpression(), options);
+    }
 
     public virtual string? RenderParameter(ParameterExpression parameter) => null;
 
@@ -229,6 +264,7 @@ public static class SqlDialects
             SupportsNullOrdering = false,
             SupportsStoredProcedures = true,
             SupportsAnonymousProceduralBlocks = true,
+            CurrentTimestampSyntax = SqlCurrentTimestampSyntax.GetDate,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
         public override string TrueLiteral => "1";
@@ -236,13 +272,25 @@ public static class SqlDialects
 
         public override string GetFunctionName(string name) => name.ToUpperInvariant() switch
         {
-            "CURRENT_TIMESTAMP" or "NOW" => "GETDATE",
             "CLOCK_TIMESTAMP" => "SYSDATETIME",
             "LN" => "LOG",
             "CHR" => "CHAR",
             "REPEAT" => "REPLICATE",
             _ => name,
         };
+
+        public override string RenderCurrentTimestamp(
+            CurrentTimestampExpression timestamp,
+            SqlGenerationOptions options) =>
+            options.FunctionNameCase == FunctionNameCase.Lower ? "getdate()" : "GETDATE()";
+
+        public override string? RenderFunction(
+            FunctionCallExpression function,
+            Func<SqlExpression, string> renderExpression,
+            SqlGenerationOptions options) =>
+            function.Name.Value.ToUpperInvariant() is "NOW" or "CURRENT_TIMESTAMP" or "GETDATE"
+                ? RenderCurrentTimestampFunction(function, options)
+                : base.RenderFunction(function, renderExpression, options);
 
     }
 
@@ -273,7 +321,6 @@ public static class SqlDialects
 
         public override string GetFunctionName(string name) => name.ToUpperInvariant() switch
         {
-            "NOW" => "DATETIME",
             "LEAST" => "MIN",
             "GREATEST" => "MAX",
             "JSON_AGG" or "JSONB_AGG" => "JSON_GROUP_ARRAY",
@@ -282,6 +329,14 @@ public static class SqlDialects
             "JSON_BUILD_ARRAY" => "JSON_ARRAY",
             _ => name,
         };
+
+        public override string? RenderFunction(
+            FunctionCallExpression function,
+            Func<SqlExpression, string> renderExpression,
+            SqlGenerationOptions options) =>
+            function.Name.Value.ToUpperInvariant() is "NOW" or "CURRENT_TIMESTAMP"
+                ? RenderCurrentTimestampFunction(function, options)
+                : base.RenderFunction(function, renderExpression, options);
 
         public override SqlNode TransformNode(SqlNode node) => node switch
         {
@@ -372,8 +427,18 @@ public static class SqlDialects
             SupportsExplainOptions = true,
             SupportsStoredProcedures = true,
             SupportsAnonymousProceduralBlocks = true,
+            CurrentTimestampSyntax = SqlCurrentTimestampSyntax.Now,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
+
+        public override string? RenderFunction(
+            FunctionCallExpression function,
+            Func<SqlExpression, string> renderExpression,
+            SqlGenerationOptions options) =>
+            function.Name.Value.Equals("NOW", StringComparison.OrdinalIgnoreCase)
+                && function.Arguments.Count > 0
+                ? RenderCurrentTimestampFunction(function, options)
+                : base.RenderFunction(function, renderExpression, options);
     }
 
     private sealed class MySqlDialect() : SqlDialect("mysql", '`', '`', SqlLimitStyle.LimitOffsetComma)
@@ -399,6 +464,8 @@ public static class SqlDialects
             SupportsNullOrdering = false,
             SupportsCreateViewSecurity = true,
             SupportsStoredProcedures = true,
+            CurrentTimestampSyntax = SqlCurrentTimestampSyntax.Now
+                | SqlCurrentTimestampSyntax.CurrentTimestampFunction,
             DoublePipeBehavior = SqlDoublePipeBehavior.LogicalOr,
         };
 
@@ -432,6 +499,7 @@ public static class SqlDialects
             SupportsOracleDataTypes = true,
             SupportsStoredProcedures = true,
             SupportsAnonymousProceduralBlocks = true,
+            CurrentTimestampSyntax = SqlCurrentTimestampSyntax.SysDate,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
         };
 
@@ -449,16 +517,21 @@ public static class SqlDialects
         public override string GetSetOperator(SetOperator value) =>
             value == SetOperator.Except ? "MINUS" : base.GetSetOperator(value);
 
+        public override string RenderCurrentTimestamp(
+            CurrentTimestampExpression timestamp,
+            SqlGenerationOptions options) =>
+            timestamp.IsSystemDate
+                ? options.UppercaseKeywords ? "SYSDATE" : "sysdate"
+                : base.RenderCurrentTimestamp(timestamp, options);
+
         public override string? RenderFunction(
             FunctionCallExpression function,
             Func<SqlExpression, string> renderExpression,
             SqlGenerationOptions options)
         {
-            if (function.Name.Value.Equals("NOW", StringComparison.OrdinalIgnoreCase)
-                || function.Name.Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
-                    && function.Arguments.Count == 0)
+            if (function.Name.Value.Equals("NOW", StringComparison.OrdinalIgnoreCase))
             {
-                return "SYSTIMESTAMP";
+                return RenderCurrentTimestampFunction(function, options);
             }
 
             if (function.Name.Value.Equals("COALESCE", StringComparison.OrdinalIgnoreCase)
@@ -467,7 +540,7 @@ public static class SqlDialects
                 return $"NVL({renderExpression(function.Arguments[0])}, {renderExpression(function.Arguments[1])})";
             }
 
-            return null;
+            return base.RenderFunction(function, renderExpression, options);
         }
 
         public override string? RenderParameter(ParameterExpression parameter) =>
@@ -692,6 +765,11 @@ public sealed class SqlDialectBuilder
             SqlGenerationOptions options) =>
             functionRenderer?.Invoke(function, renderExpression, options)
             ?? baseDialect.RenderFunction(function, renderExpression, options);
+
+        public override string RenderCurrentTimestamp(
+            CurrentTimestampExpression timestamp,
+            SqlGenerationOptions options) =>
+            baseDialect.RenderCurrentTimestamp(timestamp, options);
 
         public override string? RenderParameter(ParameterExpression parameter) =>
             baseDialect.RenderParameter(parameter);

@@ -249,6 +249,20 @@ public static class SqlParser
         var tableName = tableIdentifierParts.Then(parts => new TableName(parts));
         var column = identifierParts.Then<SqlExpression>(parts =>
         {
+            if (parts.Count == 1 && !parts[0].IsQuoted)
+            {
+                if (parts[0].Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CurrentTimestampExpression { Span = parts[0].Span };
+                }
+
+                if (syntax.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.SysDate)
+                    && parts[0].Value.Equals("SYSDATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CurrentTimestampExpression(IsSystemDate: true) { Span = parts[0].Span };
+                }
+            }
+
             if (parts.Count > 1
                 && parts[^1].Value.Equals("NEXTVAL", StringComparison.OrdinalIgnoreCase))
             {
@@ -332,6 +346,27 @@ public static class SqlParser
                     WithinGroup = value.Item2.HasValue ? value.Item2.Value : null,
                     Filter = value.Item3.HasValue ? value.Item3.Value : null,
                 };
+                if (!value.Item4.HasValue
+                    && !call.Name.IsQuoted
+                    && call.Arguments.Count == 0
+                    && !call.IsDistinct
+                    && call.WithinGroup is null
+                    && call.Filter is null)
+                {
+                    var timestampSyntax = call.Name.Value.ToUpperInvariant() switch
+                    {
+                        "CURRENT_TIMESTAMP" => SqlCurrentTimestampSyntax.CurrentTimestampFunction,
+                        "GETDATE" => SqlCurrentTimestampSyntax.GetDate,
+                        "NOW" => SqlCurrentTimestampSyntax.Now,
+                        _ => SqlCurrentTimestampSyntax.None,
+                    };
+                    if (timestampSyntax != SqlCurrentTimestampSyntax.None
+                        && syntax.CurrentTimestampSyntax.HasFlag(timestampSyntax))
+                    {
+                        return new CurrentTimestampExpression { Span = call.Span };
+                    }
+                }
+
                 return value.Item4.HasValue
                     ? new WindowExpression(
                         call,
@@ -1004,8 +1039,9 @@ public static class SqlParser
                 value.Item4?.Expressions,
                 value.Item4?.Into));
 
-        var assignment = column.AndSkip(Terms.Char('=')).And(expression)
-            .Then(value => new Assignment((ColumnExpression)value.Item1, value.Item2));
+        var assignment = identifierParts.Then(parts => new ColumnExpression(parts))
+            .AndSkip(Terms.Char('=')).And(expression)
+            .Then(value => new Assignment(value.Item1, value.Item2));
         var update = UPDATE.SkipAnd(namedTable)
             .AndSkip(SET)
             .And(Separated(comma, assignment))

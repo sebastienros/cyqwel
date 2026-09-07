@@ -27,6 +27,16 @@ public enum SqlDoublePipeBehavior
     LogicalOr,
 }
 
+[Flags]
+public enum SqlCurrentTimestampSyntax
+{
+    None = 0,
+    CurrentTimestampFunction = 1,
+    GetDate = 2,
+    Now = 4,
+    SysDate = 8,
+}
+
 // Parser implementation detail. Public callers select a dialect and capabilities,
 // not a procedural vendor/style taxonomy.
 [Flags]
@@ -74,6 +84,10 @@ public sealed record SqlDialectParserOptions
         SupportsOracleDataTypes = true,
         SupportsStoredProcedures = true,
         SupportsAnonymousProceduralBlocks = true,
+        CurrentTimestampSyntax = SqlCurrentTimestampSyntax.CurrentTimestampFunction
+            | SqlCurrentTimestampSyntax.GetDate
+            | SqlCurrentTimestampSyntax.Now
+            | SqlCurrentTimestampSyntax.SysDate,
         DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
     };
 
@@ -124,6 +138,11 @@ public sealed record SqlDialectParserOptions
     public bool SupportsStoredProcedures { get; init; }
 
     public bool SupportsAnonymousProceduralBlocks { get; init; }
+
+    /// <summary>
+    /// Additional current-timestamp spellings. Bare CURRENT_TIMESTAMP is always supported.
+    /// </summary>
+    public SqlCurrentTimestampSyntax CurrentTimestampSyntax { get; init; }
 
     public SqlDoublePipeBehavior DoublePipeBehavior { get; init; } = SqlDoublePipeBehavior.Concatenate;
 }

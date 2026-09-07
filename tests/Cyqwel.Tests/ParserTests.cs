@@ -66,13 +66,13 @@ public class ParserTests
     }
 
     [Fact]
-    public void Parses_empty_functions_and_tsql_offset_fetch()
+    public void Parses_current_timestamp_and_tsql_offset_fetch()
     {
         var document = SqlDialects.TSql.Parse(
             "SELECT GETDATE() FROM users ORDER BY id OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY");
         var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
 
-        Assert.IsType<FunctionCallExpression>(Assert.Single(select.Projections).Expression);
+        Assert.IsType<CurrentTimestampExpression>(Assert.Single(select.Projections).Expression);
         Assert.Equal(20L, Assert.IsType<LiteralExpression>(select.Offset).Value);
         Assert.Equal(10L, Assert.IsType<LiteralExpression>(select.Limit).Value);
     }

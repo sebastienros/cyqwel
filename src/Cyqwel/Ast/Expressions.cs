@@ -28,6 +28,12 @@ public sealed record StarExpression(IReadOnlyList<SqlIdentifier>? Qualifier = nu
 
 public sealed record LiteralExpression(object? Value) : SqlExpression;
 
+/// <summary>
+/// The target dialect's current timestamp. IsSystemDate preserves Oracle SYSDATE semantics
+/// when generating Oracle SQL; other targets use their ordinary current timestamp.
+/// </summary>
+public sealed record CurrentTimestampExpression(bool IsSystemDate = false) : SqlExpression;
+
 public enum TrimDirection
 {
     Leading,
