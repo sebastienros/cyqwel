@@ -502,6 +502,8 @@ internal sealed class SchemaValidationEngine
                 return SqlTypeFamily.Unknown;
             case LiteralExpression literal:
                 return LiteralType(literal.Value);
+            case CurrentTimestampExpression:
+                return SqlTypeFamily.Timestamp;
             case ParameterExpression parameter:
                 if (parameter.DefaultValue is not null)
                 {

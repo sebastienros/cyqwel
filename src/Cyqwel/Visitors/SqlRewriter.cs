@@ -45,6 +45,7 @@ public abstract partial class SqlRewriter
             ColumnExpression value => VisitColumn(value),
             StarExpression value => VisitStar(value),
             LiteralExpression value => VisitLiteral(value),
+            CurrentTimestampExpression value => VisitCurrentTimestamp(value),
             TrimExpression value => VisitTrim(value),
             TypedLiteralExpression value => VisitTypedLiteral(value),
             HexLiteralExpression value => VisitHexLiteral(value),
@@ -113,6 +114,8 @@ public abstract partial class SqlRewriter
     }
 
     public T Visit<T>(T node) where T : SqlNode => (T)Visit((SqlNode)node);
+
+    protected virtual SqlNode VisitCurrentTimestamp(CurrentTimestampExpression node) => node;
 
     protected virtual SqlNode VisitDocument(SqlDocument node) =>
         Update(node, VisitList(node.Statements), node.Statements, static (n, statements) => n with { Statements = statements });

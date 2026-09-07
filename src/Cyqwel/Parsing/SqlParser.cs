@@ -249,6 +249,26 @@ public static class SqlParser
         var tableName = tableIdentifierParts.Then(parts => new TableName(parts));
         var column = identifierParts.Then<SqlExpression>(parts =>
         {
+            if (parts.Count == 1 && !parts[0].IsQuoted)
+            {
+                if (parts[0].Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CurrentTimestampExpression { Span = parts[0].Span };
+                }
+
+                if (syntax.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.SysDate)
+                    && parts[0].Value.Equals("SYSDATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CurrentTimestampExpression(CurrentTimestampKind.SystemDate) { Span = parts[0].Span };
+                }
+
+                if (syntax.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.UtcTimestamp)
+                    && parts[0].Value.Equals("UTC_TIMESTAMP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CurrentTimestampExpression(CurrentTimestampKind.Utc) { Span = parts[0].Span };
+                }
+            }
+
             if (parts.Count > 1
                 && parts[^1].Value.Equals("NEXTVAL", StringComparison.OrdinalIgnoreCase))
             {
@@ -339,7 +359,7 @@ public static class SqlParser
                         value.Item4.Value.OrderBy,
                         value.Item4.Value.Frame,
                         value.Item4.Value.WindowName)
-                    : call;
+                    : NormalizeCurrentTimestamp(call, syntax.CurrentTimestampSyntax);
             });
 
         var dataTypeArgument = Terms.Char('-').Optional()
@@ -1004,8 +1024,9 @@ public static class SqlParser
                 value.Item4?.Expressions,
                 value.Item4?.Into));
 
-        var assignment = column.AndSkip(Terms.Char('=')).And(expression)
-            .Then(value => new Assignment((ColumnExpression)value.Item1, value.Item2));
+        var assignment = identifierParts.Then(parts => new ColumnExpression(parts))
+            .AndSkip(Terms.Char('=')).And(expression)
+            .Then(value => new Assignment(value.Item1, value.Item2));
         var update = UPDATE.SkipAnd(namedTable)
             .AndSkip(SET)
             .And(Separated(comma, assignment))
@@ -2002,6 +2023,51 @@ public static class SqlParser
     }
 
     private static Parser<string> Keyword(string value) => Terms.Keyword(value, caseInsensitive: true);
+
+    private static SqlExpression NormalizeCurrentTimestamp(
+        FunctionCallExpression function,
+        SqlCurrentTimestampSyntax syntax)
+    {
+        if (function.Name.IsQuoted
+            || function.IsDistinct
+            || function.Filter is not null
+            || function.WithinGroup is not null)
+        {
+            return function;
+        }
+
+        var (requiredSyntax, kind) = function.Name.Value.ToUpperInvariant() switch
+        {
+            "CURRENT_TIMESTAMP" when function.Arguments.Count == 0 =>
+                (SqlCurrentTimestampSyntax.CurrentTimestampFunction, CurrentTimestampKind.Default),
+            "GETDATE" when function.Arguments.Count == 0 =>
+                (SqlCurrentTimestampSyntax.GetDate, CurrentTimestampKind.Default),
+            "NOW" when function.Arguments.Count == 0 =>
+                (SqlCurrentTimestampSyntax.Now, CurrentTimestampKind.Default),
+            "UTC_TIMESTAMP" when function.Arguments.Count == 0 =>
+                (SqlCurrentTimestampSyntax.UtcTimestamp, CurrentTimestampKind.Utc),
+            "GETUTCDATE" when function.Arguments.Count == 0 =>
+                (SqlCurrentTimestampSyntax.GetUtcDate, CurrentTimestampKind.Utc),
+            "TIMEZONE" when function.Arguments is
+                [LiteralExpression { Value: string zone }, CurrentTimestampExpression { Kind: CurrentTimestampKind.Default }]
+                && zone.Equals("UTC", StringComparison.OrdinalIgnoreCase) =>
+                (SqlCurrentTimestampSyntax.TimezoneUtc, CurrentTimestampKind.Utc),
+            "SYS_EXTRACT_UTC" when function.Arguments is
+                [CurrentTimestampExpression { Kind: CurrentTimestampKind.Default }] =>
+                (SqlCurrentTimestampSyntax.SysExtractUtc, CurrentTimestampKind.Utc),
+            "SYS_EXTRACT_UTC" when function.Arguments is
+                [ColumnExpression { Parts: [{ IsQuoted: false, Value: var name }] }]
+                && name.Equals("SYSTIMESTAMP", StringComparison.OrdinalIgnoreCase) =>
+                (SqlCurrentTimestampSyntax.SysExtractUtc, CurrentTimestampKind.Utc),
+            "DATETIME" when function.Arguments is [LiteralExpression { Value: "now" }] =>
+                (SqlCurrentTimestampSyntax.DateTimeUtc, CurrentTimestampKind.Utc),
+            _ => (SqlCurrentTimestampSyntax.None, CurrentTimestampKind.Default),
+        };
+
+        return requiredSyntax != SqlCurrentTimestampSyntax.None && syntax.HasFlag(requiredSyntax)
+            ? new CurrentTimestampExpression(kind) { Span = function.Span }
+            : function;
+    }
 
     private static bool LooksLikeStoredProcedure(string sql)
     {

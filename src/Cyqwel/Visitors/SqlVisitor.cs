@@ -45,6 +45,7 @@ public abstract partial class SqlVisitor
             case ColumnExpression value: VisitColumn(value); break;
             case StarExpression value: VisitStar(value); break;
             case LiteralExpression value: VisitLiteral(value); break;
+            case CurrentTimestampExpression value: VisitCurrentTimestamp(value); break;
             case TrimExpression value: VisitTrim(value); break;
             case TypedLiteralExpression value: VisitTypedLiteral(value); break;
             case HexLiteralExpression value: VisitHexLiteral(value); break;
@@ -133,6 +134,7 @@ public abstract partial class SqlVisitor
     protected virtual void VisitColumn(ColumnExpression node) => DefaultVisit(node);
     protected virtual void VisitStar(StarExpression node) => DefaultVisit(node);
     protected virtual void VisitLiteral(LiteralExpression node) => DefaultVisit(node);
+    protected virtual void VisitCurrentTimestamp(CurrentTimestampExpression node) => DefaultVisit(node);
     protected virtual void VisitTrim(TrimExpression node) => DefaultVisit(node);
     protected virtual void VisitTypedLiteral(TypedLiteralExpression node) => DefaultVisit(node);
     protected virtual void VisitHexLiteral(HexLiteralExpression node) => DefaultVisit(node);

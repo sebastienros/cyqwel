@@ -196,6 +196,7 @@ internal static partial class SqlNodeChildren
                 return SequenceOptionChildren(value);
             case SqlIdentifier:
             case LiteralExpression:
+            case CurrentTimestampExpression:
             case DefaultExpression:
             case MergeDeleteAction:
                 return Array.Empty<SqlNode>();
