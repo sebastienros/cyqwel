@@ -28,11 +28,19 @@ public sealed record StarExpression(IReadOnlyList<SqlIdentifier>? Qualifier = nu
 
 public sealed record LiteralExpression(object? Value) : SqlExpression;
 
+public enum CurrentTimestampKind
+{
+    Default,
+    SystemDate,
+    Utc,
+}
+
 /// <summary>
-/// The target dialect's current timestamp. IsSystemDate preserves Oracle SYSDATE semantics
-/// when generating Oracle SQL; other targets use their ordinary current timestamp.
+/// The target dialect's current timestamp. SystemDate preserves Oracle SYSDATE on Oracle.
+/// Utc returns UTC date/time fields without a timezone offset; native types and clock precision vary by dialect.
 /// </summary>
-public sealed record CurrentTimestampExpression(bool IsSystemDate = false) : SqlExpression;
+public sealed record CurrentTimestampExpression(
+    CurrentTimestampKind Kind = CurrentTimestampKind.Default) : SqlExpression;
 
 public enum TrimDirection
 {

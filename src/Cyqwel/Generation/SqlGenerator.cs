@@ -729,7 +729,9 @@ public sealed partial class SqlGenerator
                 if (column.Parts.Count == 1
                     && (column.Parts[0].Value.Equals("CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase)
                         || _dialect.ParserOptions.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.SysDate)
-                            && column.Parts[0].Value.Equals("SYSDATE", StringComparison.OrdinalIgnoreCase)))
+                            && column.Parts[0].Value.Equals("SYSDATE", StringComparison.OrdinalIgnoreCase)
+                        || _dialect.ParserOptions.CurrentTimestampSyntax.HasFlag(SqlCurrentTimestampSyntax.UtcTimestamp)
+                            && column.Parts[0].Value.Equals("UTC_TIMESTAMP", StringComparison.OrdinalIgnoreCase)))
                 {
                     WriteIdentifier(column.Parts[0] with { IsQuoted = true });
                 }

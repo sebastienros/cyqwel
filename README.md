@@ -225,17 +225,43 @@ and Oracle `SYSDATE` into `CurrentTimestampExpression`. The generic parser accep
 all these forms. Empty-parenthesis `CURRENT_TIMESTAMP()` is also normalized for
 MySQL and generic SQL.
 
-Oracle `SYSDATE` retains `IsSystemDate = true` and renders back to `SYSDATE` for
-Oracle; other targets use their ordinary current timestamp. This abstraction
-does not guarantee identical clock, timezone, precision, or return-type semantics
-across databases. Oracle queries without `FROM` target Oracle 23+; generation
-does not insert `FROM DUAL`.
+`CurrentTimestampKind` selects `Default`, `SystemDate`, or `Utc`.
+Oracle `SYSDATE` parses with `Kind = CurrentTimestampKind.SystemDate` and renders
+back to `SYSDATE` for Oracle; other targets use their ordinary current timestamp.
+The default kind and the no-argument builder keep the behavior shown above.
 
-Only unquoted, unqualified, no-argument forms without aggregate or window modifiers
-are normalized. Precision-bearing calls remain ordinary function expressions and
-retain their arguments; unsupported timestamp argument forms throw during
-generation unless `UnsupportedBehavior` is `Ignore`. UTC, local-time, date-only,
-and wall-clock functions are not included in this normalization.
+Request UTC explicitly with `Sql.CurrentTimestamp(CurrentTimestampKind.Utc)`:
+
+| Target dialect | UTC expression |
+|---|---|
+| Generic, MySQL | `UTC_TIMESTAMP()` |
+| T-SQL | `GETUTCDATE()` |
+| PostgreSQL | `TIMEZONE('UTC', CURRENT_TIMESTAMP)` |
+| Oracle | `SYS_EXTRACT_UTC(CURRENT_TIMESTAMP)` |
+| SQLite | `DATETIME('now')` |
+
+UTC mode returns UTC date/time fields without a timezone offset, not a
+session-local display of a timezone-aware value. PostgreSQL and Oracle return
+timestamps without timezone metadata; SQLite returns text. Native SQL types,
+precision, and transaction/statement/wall-clock timing still vary by database.
+No session timezone is changed. SQLite's default `CURRENT_TIMESTAMP` is already
+UTC; `DATETIME('now')` lets the explicit UTC kind round-trip through the parser.
+
+The UTC expressions above parse back into the UTC kind in their respective
+dialects. MySQL also accepts bare `UTC_TIMESTAMP`, PostgreSQL recognizes
+`TIMEZONE('UTC', NOW())`, and Oracle recognizes `SYS_EXTRACT_UTC(SYSTIMESTAMP)`.
+The generic parser accepts all these spellings.
+
+Only unquoted, unqualified built-ins without aggregate or window modifiers are
+normalized. UTC wrappers are recognized only for the specific current-time
+arguments above, not arbitrary timestamps or timezones. Precision-bearing calls
+remain ordinary function expressions and retain their arguments; unsupported
+timestamp argument forms throw during generation unless `UnsupportedBehavior`
+is `Ignore`. Higher-precision variants such as `SYSUTCDATETIME()`, local-time,
+date-only, and separate wall-clock functions are outside this normalization.
+
+Oracle queries without `FROM` target Oracle 23+; generation does not insert
+`FROM DUAL`.
 
 ## Stored procedures
 

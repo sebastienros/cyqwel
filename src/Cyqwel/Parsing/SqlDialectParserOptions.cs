@@ -35,6 +35,11 @@ public enum SqlCurrentTimestampSyntax
     GetDate = 2,
     Now = 4,
     SysDate = 8,
+    UtcTimestamp = 16,
+    GetUtcDate = 32,
+    TimezoneUtc = 64,
+    SysExtractUtc = 128,
+    DateTimeUtc = 256,
 }
 
 // Parser implementation detail. Public callers select a dialect and capabilities,
@@ -87,7 +92,12 @@ public sealed record SqlDialectParserOptions
         CurrentTimestampSyntax = SqlCurrentTimestampSyntax.CurrentTimestampFunction
             | SqlCurrentTimestampSyntax.GetDate
             | SqlCurrentTimestampSyntax.Now
-            | SqlCurrentTimestampSyntax.SysDate,
+            | SqlCurrentTimestampSyntax.SysDate
+            | SqlCurrentTimestampSyntax.UtcTimestamp
+            | SqlCurrentTimestampSyntax.GetUtcDate
+            | SqlCurrentTimestampSyntax.TimezoneUtc
+            | SqlCurrentTimestampSyntax.SysExtractUtc
+            | SqlCurrentTimestampSyntax.DateTimeUtc,
         DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,
     };
 

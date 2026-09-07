@@ -46,7 +46,16 @@ public static class Sql
 
     public static ParameterExpression Param(string name, char prefix = '@') => new(name, prefix);
 
-    public static CurrentTimestampExpression CurrentTimestamp() => new();
+    public static CurrentTimestampExpression CurrentTimestamp(
+        CurrentTimestampKind kind = CurrentTimestampKind.Default)
+    {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+        }
+
+        return new(kind);
+    }
 
     public static SqlDocument Document(params SqlStatement[] statements)
     {

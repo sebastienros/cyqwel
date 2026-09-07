@@ -30,7 +30,7 @@ public class CurrentTimestampTests
         var expression = ParseExpression(SqlDialectRegistry.Get(dialectName), sql);
 
         var timestamp = Assert.IsType<CurrentTimestampExpression>(expression);
-        Assert.Equal(systemDate, timestamp.IsSystemDate);
+        Assert.Equal(systemDate ? CurrentTimestampKind.SystemDate : CurrentTimestampKind.Default, timestamp.Kind);
         if (!systemDate)
         {
             Assert.Equal(Sql.CurrentTimestamp(), timestamp);
@@ -71,8 +71,9 @@ public class CurrentTimestampTests
         const string sql = "SELECT SYSDATE, CURRENT_TIMESTAMP, TRUNC(SYSDATE)";
         var document = SqlDialects.Oracle.Parse(sql);
 
-        Assert.Equal([true, false, true],
-            document.FindAll<CurrentTimestampExpression>().Select(timestamp => timestamp.IsSystemDate));
+        Assert.Equal(
+            [CurrentTimestampKind.SystemDate, CurrentTimestampKind.Default, CurrentTimestampKind.SystemDate],
+            document.FindAll<CurrentTimestampExpression>().Select(timestamp => timestamp.Kind));
         Assert.Equal(sql, document.ToSql(SqlDialects.Oracle));
         Assert.Equal(
             "SELECT CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUNC(CURRENT_TIMESTAMP)",
@@ -83,8 +84,8 @@ public class CurrentTimestampTests
         Assert.Equal(
             "SELECT CURRENT_TIMESTAMP",
             Sql.Select(Sql.CurrentTimestamp()).ToSql(SqlDialects.Oracle));
-        Assert.True(Assert.IsType<CurrentTimestampExpression>(
-            ParseExpression(SqlDialects.Oracle, "SYSDATE")).IsSystemDate);
+        Assert.Equal(CurrentTimestampKind.SystemDate, Assert.IsType<CurrentTimestampExpression>(
+            ParseExpression(SqlDialects.Oracle, "SYSDATE")).Kind);
     }
 
     [Theory]
@@ -254,7 +255,7 @@ public class CurrentTimestampTests
     }
 
     [Theory]
-    [InlineData("tsql", "GETUTCDATE()")]
+    [InlineData("tsql", "SYSUTCDATETIME()")]
     [InlineData("tsql", "SYSDATETIME()")]
     [InlineData("tsql", "SYSDATETIMEOFFSET()")]
     [InlineData("postgresql", "CLOCK_TIMESTAMP()")]
@@ -340,7 +341,7 @@ public class CurrentTimestampTests
 
         Assert.Equal("current_timestamp", Sql.CurrentTimestamp().ToSql(SqlDialects.PostgreSql, options));
         Assert.Equal("getdate()", Sql.CurrentTimestamp().ToSql(SqlDialects.TSql, options));
-        Assert.Equal("sysdate", new CurrentTimestampExpression(true).ToSql(SqlDialects.Oracle, options));
+        Assert.Equal("sysdate", Sql.CurrentTimestamp(CurrentTimestampKind.SystemDate).ToSql(SqlDialects.Oracle, options));
         Assert.Contains("current_timestamp as created_at", query.ToSql(SqlDialects.PostgreSql, options));
         Assert.Equal("GETDATE()", Sql.CurrentTimestamp().ToSql(SqlDialects.TSql, new SqlGenerationOptions
         {
