@@ -72,6 +72,7 @@ public sealed record SqlDialectParserOptions
             | SqlParameterStyle.DollarNamed
             | SqlParameterStyle.DollarNumbered,
         SupportsBackslashStringEscapes = true,
+        SupportsNationalStringLiterals = true,
         SupportsTop = true,
         SupportsLimit = true,
         SupportsLimitComma = true,
@@ -110,6 +111,8 @@ public sealed record SqlDialectParserOptions
     public bool SupportsDoubleQuotedStrings { get; init; }
 
     public bool SupportsBackslashStringEscapes { get; init; }
+
+    public bool SupportsNationalStringLiterals { get; init; }
 
     public bool DollarSignIsIdentifier { get; init; }
 

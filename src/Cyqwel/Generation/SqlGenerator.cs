@@ -1294,10 +1294,19 @@ public sealed partial class SqlGenerator
                 _builder.Append(boolean ? _dialect.TrueLiteral : _dialect.FalseLiteral);
                 break;
             case string text:
+                if (literal.IsNational && _dialect.ParserOptions.SupportsNationalStringLiterals)
+                {
+                    _builder.Append('N');
+                }
+
                 _builder.Append('\'');
                 foreach (var character in text)
                 {
-                    if (character == '\'') _builder.Append('\'');
+                    if (character == '\''
+                        || character == '\\' && _dialect.ParserOptions.SupportsBackslashStringEscapes)
+                    {
+                        _builder.Append(character);
+                    }
                     _builder.Append(character);
                 }
 
