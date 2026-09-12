@@ -287,6 +287,13 @@ public static class SqlParser
         {
             text = QuotedString('"', syntax.SupportsBackslashStringEscapes).Or(text);
         }
+        var unicodeStringLiteral = syntax.SupportsUnicodeStringLiterals
+            ? Terms.Char('N').Or(Terms.Char('n')).SkipAnd(text)
+                .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value).Value)
+                {
+                    IsUnicodeStringLiteral = true,
+                })
+            : Fail<SqlExpression>();
         var boolean = TRUE.Then<SqlExpression>(new LiteralExpression(true))
             .Or(FALSE.Then<SqlExpression>(new LiteralExpression(false)));
         var nullLiteral = NULL.Then<SqlExpression>(new LiteralExpression(null));
@@ -494,6 +501,7 @@ public static class SqlParser
             .Or(defaultExpression)
             .Or(typedLiteral)
             .Or(hexLiteral)
+            .Or(unicodeStringLiteral)
             .Or(text)
             .Or(number)
             .Or(column);

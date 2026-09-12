@@ -85,6 +85,8 @@ public sealed record SqlDialectParserOptions
 
     public bool SupportsDoubleQuotedStrings { get; init; }
 
+    public bool SupportsUnicodeStringLiterals { get; init; }
+
     public bool SupportsBackslashStringEscapes { get; init; }
 
     public bool DollarSignIsIdentifier { get; init; }

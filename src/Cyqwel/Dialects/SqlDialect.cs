@@ -227,6 +227,7 @@ public static class SqlDialects
             SupportsReturning = false,
             SupportsILike = false,
             SupportsNullOrdering = false,
+            SupportsUnicodeStringLiterals = true,
             SupportsStoredProcedures = true,
             SupportsAnonymousProceduralBlocks = true,
             DoublePipeBehavior = SqlDoublePipeBehavior.Concatenate,

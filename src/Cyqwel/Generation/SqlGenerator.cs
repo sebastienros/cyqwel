@@ -1269,6 +1269,11 @@ public sealed partial class SqlGenerator
                 _builder.Append(boolean ? _dialect.TrueLiteral : _dialect.FalseLiteral);
                 break;
             case string text:
+                if (literal.IsUnicodeStringLiteral && _dialect.ParserOptions.SupportsUnicodeStringLiterals)
+                {
+                    _builder.Append('N');
+                }
+
                 _builder.Append('\'');
                 foreach (var character in text)
                 {

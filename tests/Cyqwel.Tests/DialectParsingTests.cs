@@ -25,6 +25,18 @@ public class DialectParsingTests
     }
 
     [Fact]
+    public void Parses_tsql_unicode_string_literals()
+    {
+        var document = SqlDialects.TSql.Parse("SELECT N'ação'");
+
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+        var literal = Assert.IsType<LiteralExpression>(Assert.Single(select.Projections).Expression);
+
+        Assert.Equal("ação", literal.Value);
+        Assert.Equal("SELECT N'ação'", document.ToSql(SqlDialects.TSql));
+    }
+
+    [Fact]
     public void Reserves_keywords_per_dialect()
     {
         AssertParses(SqlDialects.MySql, "SELECT returning, ilike, nulls, top FROM data");

@@ -26,7 +26,10 @@ public sealed record ColumnExpression(IReadOnlyList<SqlIdentifier> Parts) : SqlE
 
 public sealed record StarExpression(IReadOnlyList<SqlIdentifier>? Qualifier = null) : SqlExpression;
 
-public sealed record LiteralExpression(object? Value) : SqlExpression;
+public sealed record LiteralExpression(object? Value) : SqlExpression
+{
+    internal bool IsUnicodeStringLiteral { get; init; }
+}
 
 public enum TrimDirection
 {
