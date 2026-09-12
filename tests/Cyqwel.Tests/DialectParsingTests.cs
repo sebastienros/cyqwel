@@ -52,6 +52,17 @@ public class DialectParsingTests
     }
 
     [Theory]
+    [InlineData("postgresql", "SELECT TRIM('a' || 'b' FROM name) FROM users")]
+    [InlineData("postgresql", "SELECT TRIM(N'a' || N'b' FROM name) FROM users")]
+    [InlineData("tsql", "SELECT TRIM(N'a' + N'b' FROM name) FROM users")]
+    public void Parses_complete_trim_character_expressions(string dialectName, string sql)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+
+        Assert.Equal(sql, dialect.Parse(sql).ToSql(dialect));
+    }
+
+    [Theory]
     [InlineData("generic")]
     [InlineData("tsql")]
     [InlineData("postgresql")]

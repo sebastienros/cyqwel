@@ -482,9 +482,9 @@ public static class SqlParser
         var starExpression = star.Then<SqlExpression>(new StarExpression());
 
         var defaultExpression = DEFAULT.Then<SqlExpression>(new DefaultExpression());
-        var stringLiteralWithIntroducer = stringLiteral.Or(simpleIdentifier
+        var stringLiteralWithIntroducer = simpleIdentifier
             .And(text)
-            .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value.Item2).Value)));
+            .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value.Item2).Value));
         var typedLiteral = TIMESTAMPTZ.SkipAnd(text)
             .Then<SqlExpression>(value => new TypedLiteralExpression(new SqlIdentifier("TIMESTAMPTZ"), value));
         var hexLiteral = Terms.Text("0x")
@@ -498,13 +498,15 @@ public static class SqlParser
                 .Or(TRAILING.Then(TrimDirection.Trailing))
                 .Or(BOTH.Then(TrimDirection.Both))
                 .Optional())
-            .And(stringLiteralWithIntroducer.Or(expression).Optional())
-            .AndSkip(FROM)
+            .And(expression.AndSkip(FROM)
+                .Or(stringLiteralWithIntroducer.AndSkip(FROM))
+                .Then<SqlExpression?>(value => value)
+                .Or(FROM.Then<SqlExpression?>(_ => null)))
             .And(expression)
             .AndSkip(rightParenthesis)
             .Then<SqlExpression>(value => new TrimExpression(
                 value.Item2.HasValue ? value.Item2.Value : TrimDirection.Both,
-                value.Item3.HasValue ? value.Item3.Value : null,
+                value.Item3,
                 value.Item4));
         var trim = trimSpecial.Or(function);
         var term = tryCast
