@@ -307,11 +307,22 @@ public static class SqlParser
         {
             text = QuotedString('"', syntax.SupportsBackslashStringEscapes).Or(text);
         }
+        var stringLiteral = text;
+        if (syntax.SupportsNationalStringLiterals)
+        {
+            stringLiteral = QuotedString('\'', syntax.SupportsBackslashStringEscapes, isNational: true)
+                .Or(stringLiteral);
+            if (syntax.SupportsDoubleQuotedStrings)
+            {
+                stringLiteral = QuotedString('"', syntax.SupportsBackslashStringEscapes, isNational: true)
+                    .Or(stringLiteral);
+            }
+        }
         var boolean = TRUE.Then<SqlExpression>(new LiteralExpression(true))
             .Or(FALSE.Then<SqlExpression>(new LiteralExpression(false)));
         var nullLiteral = NULL.Then<SqlExpression>(new LiteralExpression(null));
 
-        var parameterDefault = text.Or(boolean).Or(nullLiteral).Or(number);
+        var parameterDefault = stringLiteral.Or(boolean).Or(nullLiteral).Or(number);
         var parameter = CreateParameterParser(
             parameterIdentifier,
             parameterDefault,
@@ -471,9 +482,9 @@ public static class SqlParser
         var starExpression = star.Then<SqlExpression>(new StarExpression());
 
         var defaultExpression = DEFAULT.Then<SqlExpression>(new DefaultExpression());
-        var stringLiteralWithIntroducer = simpleIdentifier
+        var stringLiteralWithIntroducer = stringLiteral.Or(simpleIdentifier
             .And(text)
-            .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value.Item2).Value));
+            .Then<SqlExpression>(value => new LiteralExpression(((LiteralExpression)value.Item2).Value)));
         var typedLiteral = TIMESTAMPTZ.SkipAnd(text)
             .Then<SqlExpression>(value => new TypedLiteralExpression(new SqlIdentifier("TIMESTAMPTZ"), value));
         var hexLiteral = Terms.Text("0x")
@@ -514,7 +525,7 @@ public static class SqlParser
             .Or(defaultExpression)
             .Or(typedLiteral)
             .Or(hexLiteral)
-            .Or(text)
+            .Or(stringLiteral)
             .Or(number)
             .Or(column);
 
@@ -2406,7 +2417,7 @@ public static class SqlParser
             .Then(parts => new SqlIdentifier(string.Concat(parts), true));
     }
 
-    private static Parser<SqlExpression> QuotedString(char quote, bool supportsBackslashEscapes)
+    private static Parser<SqlExpression> QuotedString(char quote, bool supportsBackslashEscapes, bool isNational = false)
     {
         var quoteText = quote.ToString();
         var parts = new List<Parser<string>>
@@ -2425,10 +2436,10 @@ public static class SqlParser
 
         parts.Add(Literals.NoneOf(excluded).Then(value => value.ToString()));
         return Between(
-                Terms.Char(quote),
+                Terms.Text(isNational ? "N" + quoteText : quoteText, caseInsensitive: true),
                 ZeroOrMany(OneOf(parts.ToArray())),
                 Terms.Char(quote))
-            .Then<SqlExpression>(value => new LiteralExpression(string.Concat(value)));
+            .Then<SqlExpression>(value => new LiteralExpression(string.Concat(value)) { IsNational = isNational });
     }
 
     private static char DecodeEscapedCharacter(char value) => value switch

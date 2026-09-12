@@ -6,6 +6,100 @@ namespace Cyqwel.Tests;
 
 public class DialectParsingTests
 {
+    [Theory]
+    [InlineData("generic")]
+    [InlineData("tsql")]
+    [InlineData("postgresql")]
+    [InlineData("mysql")]
+    [InlineData("oracle")]
+    public void Preserves_national_string_literals(string dialectName)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        foreach (var value in new[] { "ação", "", "d'água", "日本語", @"a\b", @"a\'b" })
+        {
+            var escaped = value.Replace("'", "''");
+            if (dialect.ParserOptions.SupportsBackslashStringEscapes)
+            {
+                escaped = escaped.Replace("\\", "\\\\");
+            }
+            var quoted = $"'{escaped}'";
+            foreach (var prefix in new[] { "N", "n" })
+            {
+                var document = dialect.Parse($"SELECT {prefix}{quoted}");
+                var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+                var projection = Assert.Single(select.Projections);
+
+                var literal = Assert.IsType<LiteralExpression>(projection.Expression);
+                Assert.Equal(value, literal.Value);
+                Assert.True(literal.IsNational);
+                Assert.Null(projection.Alias);
+                Assert.Equal($"SELECT N{quoted}", document.ToSql(dialect));
+                Assert.Equal($"SELECT N{quoted}", dialect.Parse(document.ToSql(dialect)).ToSql(dialect));
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("SELECT N'ação' AS name")]
+    [InlineData("SELECT N'ação' name", "SELECT N'ação' AS name")]
+    [InlineData("SELECT COALESCE(N'ação', N'')")]
+    [InlineData("SELECT name FROM users WHERE name = N'ação'")]
+    [InlineData("INSERT INTO users (name) VALUES (N'ação')")]
+    [InlineData("SELECT TRIM(N'á' FROM name)")]
+    public void Parses_national_strings_in_expressions(string sql, string? expected = null)
+    {
+        Assert.Equal(expected ?? sql, SqlDialects.TSql.Parse(sql).ToSql(SqlDialects.TSql));
+    }
+
+    [Theory]
+    [InlineData("generic")]
+    [InlineData("tsql")]
+    [InlineData("postgresql")]
+    [InlineData("mysql")]
+    [InlineData("oracle")]
+    [InlineData("sqlite")]
+    public void Preserves_columns_and_ordinary_strings(string dialectName)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        const string sql = "SELECT N, name AS N, N AS 'alias', 'ação' FROM users";
+
+        Assert.Equal("SELECT N, name AS N, N AS alias, 'ação' FROM users", dialect.Parse(sql).ToSql(dialect));
+    }
+
+    [Fact]
+    public void National_prefix_requires_an_adjacent_quote()
+    {
+        foreach (var sql in new[] { "SELECT N 'alias'", "SELECT N /* comment */ 'alias'", "SELECT [N]'alias'" })
+        {
+            var select = Assert.IsType<SelectStatement>(Assert.Single(SqlDialects.TSql.Parse(sql).Statements));
+            var projection = Assert.Single(select.Projections);
+
+            Assert.IsType<ColumnExpression>(projection.Expression);
+            Assert.Equal("alias", projection.Alias!.Value);
+        }
+    }
+
+    [Fact]
+    public void MySql_supports_double_quoted_national_strings()
+    {
+        Assert.Equal("SELECT N'ação'", SqlDialects.MySql.Parse("SELECT n\"ação\"").ToSql(SqlDialects.MySql));
+    }
+
+    [Fact]
+    public void Sqlite_uses_ordinary_strings_instead_of_national_strings()
+    {
+        Assert.Equal("SELECT N AS ação", SqlDialects.Sqlite.Parse("SELECT N'ação'").ToSql(SqlDialects.Sqlite));
+        Assert.Equal("SELECT 'ação'", SqlDialects.TSql.Parse("SELECT N'ação'").ToSql(SqlDialects.Sqlite));
+    }
+
+    [Fact]
+    public void Custom_dialects_inherit_national_string_support()
+    {
+        var dialect = SqlDialectBuilder.Create("custom-tsql").BasedOn(SqlDialects.TSql).Build();
+
+        Assert.Equal("SELECT N'ação'", dialect.Parse("SELECT N'ação'").ToSql(dialect));
+    }
+
     [Fact]
     public void Enforces_identifier_and_string_quote_rules()
     {

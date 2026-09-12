@@ -269,6 +269,7 @@ public static class SqlDialects
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote | SqlIdentifierQuoteStyle.Brackets,
             ParameterStyles = SqlParameterStyle.AtNamed,
+            SupportsNationalStringLiterals = true,
             SupportsTop = true,
             SupportsLimit = false,
             SupportsOffsetOnly = false,
@@ -453,6 +454,7 @@ public static class SqlDialects
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.DollarNumbered,
+            SupportsNationalStringLiterals = true,
             SupportsLimit = true,
             SupportsOffsetOnly = true,
             SupportsOffsetFetch = true,
@@ -500,6 +502,7 @@ public static class SqlDialects
             ParameterStyles = SqlParameterStyle.QuestionMark,
             SupportsDoubleQuotedStrings = true,
             SupportsBackslashStringEscapes = true,
+            SupportsNationalStringLiterals = true,
             SupportsLimit = true,
             SupportsLimitComma = true,
             SupportsOffsetOnly = false,
@@ -530,6 +533,7 @@ public static class SqlDialects
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.ColonNamed,
+            SupportsNationalStringLiterals = true,
             SupportsLimit = false,
             SupportsOffsetOnly = false,
             SupportsOffsetFetch = true,
