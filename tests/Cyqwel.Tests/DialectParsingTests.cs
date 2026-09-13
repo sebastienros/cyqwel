@@ -1,6 +1,7 @@
 using Cyqwel.Ast;
 using Cyqwel.Dialects;
 using Cyqwel.Parsing;
+using Cyqwel.Visitors;
 
 namespace Cyqwel.Tests;
 
@@ -49,6 +50,152 @@ public class DialectParsingTests
     public void Parses_national_strings_in_expressions(string sql, string? expected = null)
     {
         Assert.Equal(expected ?? sql, SqlDialects.TSql.Parse(sql).ToSql(SqlDialects.TSql));
+    }
+
+    [Theory]
+    [InlineData("SELECT 1 AS N'alias'", "SELECT 1 AS alias", "alias")]
+    [InlineData("SELECT 1 N'alias'", "SELECT 1 AS alias", "alias")]
+    [InlineData("SELECT 1 AS n'alias'", "SELECT 1 AS alias", "alias")]
+    [InlineData("SELECT 1 n'alias'", "SELECT 1 AS alias", "alias")]
+    [InlineData("SELECT N'foo' AS N'alias'", "SELECT N'foo' AS alias", "alias", true)]
+    [InlineData("SELECT N'foo' N'alias'", "SELECT N'foo' AS alias", "alias", true)]
+    [InlineData("SELECT 1 AS N'display name'", "SELECT 1 AS [display name]", "display name")]
+    [InlineData("SELECT 1 AS N'd''água'", "SELECT 1 AS [d'água]", "d'água")]
+    [InlineData("SELECT 1 AS N'a]b'", "SELECT 1 AS [a]]b]", "a]b")]
+    [InlineData("SELECT 1 AS N'FROM'", "SELECT 1 AS [FROM]", "FROM")]
+    [InlineData("SELECT 1 AS N", "SELECT 1 AS N", "N")]
+    [InlineData("SELECT 1 N", "SELECT 1 AS N", "N")]
+    [InlineData("SELECT 1 AS [N]", "SELECT 1 AS [N]", "N")]
+    [InlineData("SELECT 1 AS 'alias'", "SELECT 1 AS alias", "alias")]
+    public void Parses_tsql_national_string_column_aliases(
+        string sql,
+        string expected,
+        string expectedAlias,
+        bool expressionIsNational = false)
+    {
+        var document = SqlDialects.TSql.Parse(sql);
+        var select = Assert.IsType<SelectStatement>(Assert.Single(document.Statements));
+        var projection = Assert.Single(select.Projections);
+
+        Assert.Equal(expectedAlias, projection.Alias!.Value);
+        Assert.Equal(expressionIsNational, Assert.IsType<LiteralExpression>(projection.Expression).IsNational);
+        Assert.Equal(expected, document.ToSql(SqlDialects.TSql));
+        Assert.Equal(expected, SqlDialects.TSql.Parse(document.ToSql(SqlDialects.TSql)).ToSql(SqlDialects.TSql));
+    }
+
+    [Theory]
+    [InlineData("postgresql")]
+    [InlineData("mysql")]
+    [InlineData("oracle")]
+    [InlineData("sqlite")]
+    public void National_string_aliases_require_dialect_support(string dialectName)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+
+        AssertRejects(dialect, "SELECT 1 AS N'alias'");
+        AssertRejects(dialect, "SELECT 1 N'alias'");
+    }
+
+    [Theory]
+    [InlineData("SELECT 1 AS N 'alias'")]
+    [InlineData("SELECT 1 N /* comment */ 'alias'")]
+    [InlineData("SELECT * FROM users AS N'alias'")]
+    [InlineData("SELECT * FROM (SELECT 1 AS value) N'alias'")]
+    public void National_aliases_require_adjacent_quotes_and_a_column_alias_context(string sql)
+    {
+        Assert.Throws<SqlParseException>(() => SqlDialects.TSql.Parse(sql));
+    }
+
+    [Theory]
+    [InlineData("SELECT DATE_ADD(created_at, INTERVAL N'1' DAY) FROM events", "1")]
+    [InlineData("SELECT DATE_SUB(created_at, INTERVAL N'1' DAY) FROM events", "1")]
+    [InlineData("SELECT created_at + INTERVAL N'1' DAY FROM events", "1")]
+    [InlineData("SELECT created_at - INTERVAL N'1' DAY FROM events", "1")]
+    [InlineData("SELECT INTERVAL N'1' DAY + created_at FROM events", "1")]
+    [InlineData("SELECT created_at + INTERVAL (N'1') DAY FROM events", "1")]
+    [InlineData("SELECT created_at + INTERVAL N'1 02:03:04' DAY_SECOND FROM events", "1 02:03:04")]
+    [InlineData("SELECT DATE_ADD(created_at, INTERVAL n'1' DAY) FROM events", "1",
+        "SELECT DATE_ADD(created_at, INTERVAL N'1' DAY) FROM events")]
+    [InlineData("SELECT DATE_ADD(created_at, INTERVAL n\"1\" DAY) FROM events", "1",
+        "SELECT DATE_ADD(created_at, INTERVAL N'1' DAY) FROM events")]
+    public void Parses_mysql_national_string_interval_values(string sql, string expectedValue, string? expected = null)
+    {
+        var document = SqlDialects.MySql.Parse(sql);
+        var interval = Assert.Single(document.FindAll<IntervalExpression>());
+        var literal = Assert.Single(interval.FindAll<LiteralExpression>());
+
+        Assert.Equal(expectedValue, literal.Value);
+        Assert.True(literal.IsNational);
+        Assert.Equal(expected ?? sql, document.ToSql(SqlDialects.MySql));
+        Assert.Equal(expected ?? sql, SqlDialects.MySql.Parse(document.ToSql(SqlDialects.MySql)).ToSql(SqlDialects.MySql));
+    }
+
+    [Theory]
+    [InlineData("SELECT created_at + INTERVAL day_count DAY FROM events")]
+    [InlineData("SELECT created_at + INTERVAL (day_count + 1) DAY FROM events")]
+    [InlineData("SELECT created_at + INTERVAL 1 + 2 DAY FROM events")]
+    [InlineData("SELECT created_at + INTERVAL (N'1' + N'2') DAY + INTERVAL 1 HOUR FROM events")]
+    public void Parses_complete_mysql_interval_value_expressions(string sql)
+    {
+        var document = SqlDialects.MySql.Parse(sql);
+
+        Assert.Equal(sql, document.ToSql(SqlDialects.MySql));
+        Assert.Equal(sql, SqlDialects.MySql.Parse(document.ToSql(SqlDialects.MySql)).ToSql(SqlDialects.MySql));
+    }
+
+    [Theory]
+    [InlineData("SELECT created_at + INTERVAL N'1' DAY FROM events")]
+    [InlineData("SELECT created_at + INTERVAL (N'1') DAY FROM events")]
+    [InlineData("SELECT TIMESTAMPTZ N'2026-01-01 00:00:00+00'")]
+    public void PostgreSql_rejects_national_strings_in_typed_literal_syntax(string sql)
+    {
+        Assert.Throws<SqlParseException>(() => SqlDialects.PostgreSql.Parse(sql));
+    }
+
+    [Theory]
+    [InlineData("generic", "SELECT 1 AS N'alias'", "SELECT 1 AS alias")]
+    [InlineData("tsql", "SELECT 1 N'alias'", "SELECT 1 AS alias")]
+    [InlineData("generic", "SELECT created_at + INTERVAL N'1' DAY FROM events",
+        "SELECT created_at + INTERVAL N'1' DAY FROM events")]
+    [InlineData("mysql", "SELECT created_at + INTERVAL (N'1') DAY FROM events",
+        "SELECT created_at + INTERVAL (N'1') DAY FROM events")]
+    public void Dialects_and_derived_dialects_support_national_string_contexts(
+        string dialectName,
+        string sql,
+        string expected)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        var inherited = SqlDialectBuilder.Create($"inherited-{dialectName}").BasedOn(dialect).Build();
+
+        Assert.Equal(expected, dialect.Parse(sql).ToSql(dialect));
+        Assert.Equal(expected, inherited.Parse(sql).ToSql(inherited));
+    }
+
+    [Theory]
+    [InlineData("tsql", "SELECT 1 AS N'alias'", "SELECT 1 AS 'alias'")]
+    [InlineData("mysql", "SELECT created_at + INTERVAL N'1' DAY FROM events",
+        "SELECT created_at + INTERVAL '1' DAY FROM events")]
+    public void National_string_context_support_can_be_disabled(string dialectName, string sql, string ordinarySql)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        var withoutContexts = SqlDialectBuilder.Create($"without-contexts-{dialectName}")
+            .BasedOn(dialect)
+            .ConfigureParser(options => options with
+            {
+                SupportsNationalStringAliases = false,
+                SupportsExpressionIntervalValues = false,
+            })
+            .Build();
+        var withoutNationalStrings = SqlDialectBuilder.Create($"without-national-strings-{dialectName}")
+            .BasedOn(dialect)
+            .ConfigureParser(options => options with { SupportsNationalStringLiterals = false })
+            .Build();
+
+        AssertRejects(withoutContexts, sql);
+        AssertRejects(withoutNationalStrings, sql);
+        AssertParses(withoutContexts, ordinarySql);
+        AssertParses(withoutNationalStrings, ordinarySql);
+        Assert.Equal("SELECT N'foo'", withoutContexts.Parse("SELECT N'foo'").ToSql(withoutContexts));
     }
 
     [Theory]

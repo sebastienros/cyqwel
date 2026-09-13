@@ -73,6 +73,8 @@ public sealed record SqlDialectParserOptions
             | SqlParameterStyle.DollarNumbered,
         SupportsBackslashStringEscapes = true,
         SupportsNationalStringLiterals = true,
+        SupportsNationalStringAliases = true,
+        SupportsExpressionIntervalValues = true,
         SupportsTop = true,
         SupportsLimit = true,
         SupportsLimitComma = true,
@@ -113,6 +115,16 @@ public sealed record SqlDialectParserOptions
     public bool SupportsBackslashStringEscapes { get; init; }
 
     public bool SupportsNationalStringLiterals { get; init; }
+
+    /// <summary>
+    /// Allows national string literals as SELECT column aliases.
+    /// </summary>
+    public bool SupportsNationalStringAliases { get; init; }
+
+    /// <summary>
+    /// Allows full expressions as interval values instead of only literals and parameters.
+    /// </summary>
+    public bool SupportsExpressionIntervalValues { get; init; }
 
     public bool DollarSignIsIdentifier { get; init; }
 

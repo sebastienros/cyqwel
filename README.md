@@ -44,6 +44,26 @@ if (!SqlDialects.PostgreSql.TryParse(
 }
 ```
 
+### National string literals
+
+Generic SQL, T-SQL, PostgreSQL, MySQL, and Oracle recognize adjacent `N'...'`
+and `n'...'` prefixes and preserve them through `LiteralExpression.IsNational`.
+MySQL also accepts double-quoted national strings. Generation keeps the prefix
+for those dialects and emits ordinary strings for SQLite.
+
+T-SQL and Generic SQL accept national strings as column aliases, with or without
+`AS`, such as `SELECT 1 AS N'display name'`. Aliases are normalized to identifiers.
+MySQL and Generic SQL accept expression-valued interval amounts, including
+`DATE_ADD(created_at, INTERVAL N'1' DAY)` and `created_at + INTERVAL (N'1') DAY`.
+Custom dialects inherit these capabilities and can configure them with
+`SupportsNationalStringAliases` and `SupportsExpressionIntervalValues`.
+
+PostgreSQL's typed-literal syntax still requires ordinary strings. When targeting
+a literal-only interval grammar, generation removes the national prefix and
+redundant parentheses from interval literals without changing the original AST.
+Nonliteral interval expressions throw for such targets unless unsupported SQL is
+explicitly allowed.
+
 ## Inspect and transform SQL
 
 Traversal helpers expose tables, columns, node types, and depth-first or breadth-first enumeration. Transforms return a new tree and leave the source unchanged.

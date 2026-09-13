@@ -3,6 +3,7 @@ using Cyqwel.Ast;
 using Cyqwel.Dialects;
 using Cyqwel.Generation;
 using Cyqwel.Parsing;
+using Cyqwel.Visitors;
 
 namespace Cyqwel.Tests;
 
@@ -60,6 +61,68 @@ public class GenerationTests
         Assert.Equal(
             "CREATE TABLE events (id INT, KEY idx_clean_batch ((TRIM('0' FROM batch_no))))",
             document.ToSql());
+    }
+
+    [Theory]
+    [InlineData("postgresql")]
+    [InlineData("oracle")]
+    public void Generates_national_interval_values_as_ordinary_typed_literals(string dialectName)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        foreach (var value in new[] { "N'1'", "(N'1')", "((N'1'))" })
+        {
+            var sql = $"SELECT created_at + INTERVAL {value} DAY FROM events";
+            var document = SqlDialects.MySql.Parse(sql);
+            var literal = Assert.Single(document.FindAll<LiteralExpression>());
+            var generated = document.ToSql(dialect);
+
+            Assert.Equal("SELECT created_at + INTERVAL '1' DAY FROM events", generated);
+            Assert.Equal(generated, dialect.Parse(generated).ToSql(dialect));
+            Assert.True(literal.IsNational);
+            Assert.Equal(sql, document.ToSql(SqlDialects.MySql));
+        }
+    }
+
+    [Theory]
+    [InlineData("generic")]
+    [InlineData("mysql")]
+    public void Preserves_national_interval_values_for_expression_interval_targets(string dialectName)
+    {
+        var dialect = SqlDialectRegistry.Get(dialectName);
+        const string sql = "SELECT created_at + INTERVAL (N'1') DAY FROM events";
+        var document = SqlDialects.MySql.Parse(sql);
+
+        Assert.Equal(sql, document.ToSql(dialect));
+        Assert.Equal(sql, dialect.Parse(document.ToSql(dialect)).ToSql(dialect));
+    }
+
+    [Fact]
+    public void Interval_generation_honors_custom_parser_capabilities()
+    {
+        var dialect = SqlDialectBuilder.Create("literal-intervals")
+            .BasedOn(SqlDialects.MySql)
+            .ConfigureParser(options => options with { SupportsExpressionIntervalValues = false })
+            .Build();
+        var document = SqlDialects.MySql.Parse("SELECT created_at + INTERVAL N'1' DAY FROM events");
+        var generated = document.ToSql(dialect);
+
+        Assert.Equal("SELECT created_at + INTERVAL '1' DAY FROM events", generated);
+        Assert.Equal(generated, dialect.Parse(generated).ToSql(dialect));
+        Assert.Equal("SELECT N'foo'", dialect.Parse("SELECT N'foo'").ToSql(dialect));
+    }
+
+    [Fact]
+    public void Rejects_expression_interval_values_for_literal_only_targets()
+    {
+        const string sql = "SELECT created_at + INTERVAL (day_count + 1) DAY FROM events";
+        var document = SqlDialects.MySql.Parse(sql);
+
+        Assert.Throws<NotSupportedException>(() => document.ToSql(SqlDialects.PostgreSql));
+        Assert.Equal(
+            sql,
+            document.ToSql(
+                SqlDialects.PostgreSql,
+                new SqlGenerationOptions { UnsupportedBehavior = UnsupportedSqlBehavior.Ignore }));
     }
 
     [Fact]

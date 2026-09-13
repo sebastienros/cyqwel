@@ -857,11 +857,7 @@ public sealed partial class SqlGenerator
                 _builder.Append(')');
                 break;
             case IntervalExpression interval:
-                Keyword("INTERVAL");
-                Space();
-                WriteExpression(interval.Value);
-                Space();
-                WriteIdentifier(interval.Unit);
+                WriteInterval(interval);
                 break;
             case SequenceValueExpression sequence:
                 WriteTableName(sequence.Sequence);
@@ -1229,6 +1225,34 @@ public sealed partial class SqlGenerator
         }
 
         _builder.Append(parameter.Prefix).Append(parameter.Name);
+    }
+
+    private void WriteInterval(IntervalExpression interval)
+    {
+        var value = interval.Value;
+        if (!_dialect.ParserOptions.SupportsExpressionIntervalValues)
+        {
+            while (value is ParenthesizedExpression parenthesized)
+            {
+                value = parenthesized.Expression;
+            }
+
+            if (value is LiteralExpression { IsNational: true } literal)
+            {
+                value = literal with { IsNational = false };
+            }
+            else if (value is not LiteralExpression and not ParameterExpression)
+            {
+                Unsupported($"{_dialect.Name} does not support expression-valued interval amounts.");
+                value = interval.Value;
+            }
+        }
+
+        Keyword("INTERVAL");
+        Space();
+        WriteExpression(value);
+        Space();
+        WriteIdentifier(interval.Unit);
     }
 
     private void WriteTrim(TrimExpression trim)

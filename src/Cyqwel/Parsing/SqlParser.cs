@@ -307,16 +307,17 @@ public static class SqlParser
         {
             text = QuotedString('"', syntax.SupportsBackslashStringEscapes).Or(text);
         }
+        Parser<SqlExpression>? nationalString = null;
         var stringLiteral = text;
         if (syntax.SupportsNationalStringLiterals)
         {
-            stringLiteral = QuotedString('\'', syntax.SupportsBackslashStringEscapes, isNational: true)
-                .Or(stringLiteral);
+            nationalString = QuotedString('\'', syntax.SupportsBackslashStringEscapes, isNational: true);
             if (syntax.SupportsDoubleQuotedStrings)
             {
-                stringLiteral = QuotedString('"', syntax.SupportsBackslashStringEscapes, isNational: true)
-                    .Or(stringLiteral);
+                nationalString = QuotedString('"', syntax.SupportsBackslashStringEscapes, isNational: true)
+                    .Or(nationalString);
             }
+            stringLiteral = nationalString.Or(text);
         }
         var boolean = TRUE.Then<SqlExpression>(new LiteralExpression(true))
             .Or(FALSE.Then<SqlExpression>(new LiteralExpression(false)));
@@ -450,7 +451,10 @@ public static class SqlParser
             .And(expression)
             .AndSkip(rightParenthesis)
             .Then<SqlExpression>(value => new ExtractExpression(value.Item1, value.Item2));
-        var interval = INTERVAL.SkipAnd(text.Or(number).Or(parameter))
+        var intervalValue = syntax.SupportsExpressionIntervalValues
+            ? expression
+            : text.Or(number).Or(parameter);
+        var interval = INTERVAL.SkipAnd(intervalValue)
             .And(simpleIdentifier)
             .Then<SqlExpression>(value => new IntervalExpression(value.Item1, value.Item2));
 
@@ -731,12 +735,19 @@ public static class SqlParser
                 null));
         windowSpecification.Parser = namedWindowSpecification.Or(anonymousWindowSpecification);
 
-        var stringAlias = text.Then(value => new SqlIdentifier(((LiteralExpression)value).Value?.ToString() ?? string.Empty));
+        var stringAlias = CreateStringAliasParser(text);
         var alias = AS.SkipAnd(simpleIdentifier.Or(stringAlias)).Or(nonKeywordIdentifier.Or(stringAlias));
         var tableAlias = syntax.SupportsTableAliasAs
             ? alias
             : nonKeywordIdentifier.Or(stringAlias);
-        var selectItem = expression.And(alias.Optional())
+        var selectAlias = alias;
+        if (syntax.SupportsNationalStringAliases && nationalString is not null)
+        {
+            selectAlias = AS.Optional()
+                .SkipAnd(CreateStringAliasParser(nationalString))
+                .Or(alias);
+        }
+        var selectItem = expression.And(selectAlias.Optional())
             .Then(value => new SelectItem(
                 value.Item1,
                 value.Item2.HasValue ? (SqlIdentifier?)value.Item2.Value : null));
@@ -2418,6 +2429,9 @@ public static class SqlParser
                 Terms.Char(closeQuote))
             .Then(parts => new SqlIdentifier(string.Concat(parts), true));
     }
+
+    private static Parser<SqlIdentifier> CreateStringAliasParser(Parser<SqlExpression> parser) =>
+        parser.Then(value => new SqlIdentifier(((LiteralExpression)value).Value?.ToString() ?? string.Empty));
 
     private static Parser<SqlExpression> QuotedString(char quote, bool supportsBackslashEscapes, bool isNational = false)
     {
