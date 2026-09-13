@@ -21,6 +21,29 @@ public sealed class SelectBuilder
         return this;
     }
 
+    public SelectBuilder Into(TableName target)
+    {
+        _statement = _statement with { Into = target ?? throw new ArgumentNullException(nameof(target)) };
+        return this;
+    }
+
+    public SelectBuilder QueryOptions(params TSqlQueryOption[] options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _statement = _statement with { QueryOptions = options };
+        return this;
+    }
+
+    public SelectBuilder ResultFormat(TSqlResultFormat format)
+    {
+        _statement = _statement with { ResultFormat = format ?? throw new ArgumentNullException(nameof(format)) };
+        return this;
+    }
+
+    public SelectBuilder CrossApply(TableSource source) => AddJoin(JoinKind.CrossApply, source, null);
+
+    public SelectBuilder OuterApply(TableSource source) => AddJoin(JoinKind.OuterApply, source, null);
+
     public SelectBuilder From(string table, string? alias = null)
     {
         _statement = _statement with { From = new NamedTable(table, alias) };
@@ -37,6 +60,20 @@ public sealed class SelectBuilder
     {
         ArgumentNullException.ThrowIfNull(query);
         _statement = _statement with { From = new DerivedTable(query, new SqlIdentifier(alias)) };
+        return this;
+    }
+
+    public SelectBuilder From(SqlQuery query, string alias, params string[] columns)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(columns);
+        _statement = _statement with
+        {
+            From = new DerivedTable(query, new SqlIdentifier(alias))
+            {
+                Columns = columns.Length == 0 ? null : columns.Select(column => new SqlIdentifier(column)).ToArray(),
+            },
+        };
         return this;
     }
 
@@ -377,6 +414,19 @@ public sealed class SetQueryBuilder
     private SetOperationStatement _statement;
 
     internal SetQueryBuilder(SetOperationStatement statement) => _statement = statement;
+
+    public SetQueryBuilder QueryOptions(params TSqlQueryOption[] options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _statement = _statement with { QueryOptions = options };
+        return this;
+    }
+
+    public SetQueryBuilder ResultFormat(TSqlResultFormat format)
+    {
+        _statement = _statement with { ResultFormat = format ?? throw new ArgumentNullException(nameof(format)) };
+        return this;
+    }
 
     public SetQueryBuilder Union(SelectBuilder right, bool all = false)
         => Union(right?.Build() ?? throw new ArgumentNullException(nameof(right)), all);

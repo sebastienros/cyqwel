@@ -34,6 +34,7 @@ public sealed partial class SqlGenerator
             ReplaceProcedureStatement replace when !CanRepresent(replace.Parameters) => true,
             ReplaceProcedureStatement replace when !CanRepresent(replace.Body) => true,
             CallProcedureStatement call when !CanRepresent(call.Arguments) => true,
+            CallProcedureStatement { ReturnVariable: not null } when !_dialect.ParserOptions.SupportsTSqlExtensions => true,
             _ => false,
         };
     }
@@ -184,7 +185,8 @@ public sealed partial class SqlGenerator
         {
             ProceduralLineBreak();
             WriteNode(statement);
-            _builder.Append(';');
+            if (statement is not MergeStatement || !_dialect.ParserOptions.SupportsTSqlExtensions)
+                _builder.Append(';');
         }
     }
 
@@ -219,10 +221,129 @@ public sealed partial class SqlGenerator
         Routines.WriteLoopControl(this, isContinue, _loopLabels.Peek());
     }
 
-    private void WriteProceduralReturn()
+    private void WriteProceduralReturn(ProceduralReturnStatement statement)
     {
         if (!EnsureProceduralStatementContext("RETURN")) return;
+        if (statement.Value is not null && !EnsureTSqlScript("RETURN values")) return;
         Routines.WriteReturn(this);
+        if (statement.Value is not null)
+        {
+            Space();
+            WriteExpression(statement.Value);
+        }
+    }
+
+    private bool EnsureTSqlScript(string feature)
+    {
+        if (_dialect.ParserOptions.SupportsTSqlExtensions) return true;
+        Unsupported($"{_dialect.Name} cannot represent T-SQL {feature}.");
+        return false;
+    }
+
+    private void WriteBatch(SqlBatch batch)
+    {
+        if (batch.IsTerminated && !EnsureTSqlScript("GO batch boundaries")) return;
+        WriteDocumentStatements(batch.Statements, inferProcedureBatches: false);
+        if (!batch.IsTerminated) return;
+        if (batch.Statements.Count > 0) NewLine();
+        Keyword("GO");
+    }
+
+    private void WriteDeclare(DeclareStatement statement)
+    {
+        if (!EnsureTSqlScript("declaration statements")) return;
+        Keyword("DECLARE");
+        Space();
+        WriteSeparated(statement.Variables, variable =>
+        {
+            WriteLocalVariableReference(new LocalVariableExpression(variable.Name));
+            Space();
+            WriteDataType(variable.DataType);
+            if (variable.Initializer is null) return;
+            _builder.Append(" = ");
+            WriteExpression(variable.Initializer);
+        });
+    }
+
+    private void WriteTableVariableDeclaration(TableVariableDeclarationStatement statement)
+    {
+        if (!EnsureTSqlScript("table variable declarations")) return;
+        Keyword("DECLARE");
+        Space();
+        WriteLocalVariableReference(new LocalVariableExpression(statement.Name));
+        Space();
+        Keyword("TABLE");
+        _builder.Append(" (");
+        WriteSeparated(statement.Elements, WriteTableElement);
+        _builder.Append(')');
+    }
+
+    private void WriteSetVariable(SetVariableStatement statement)
+    {
+        if (!EnsureTSqlScript("variable assignments")) return;
+        Keyword("SET");
+        Space();
+        WriteLocalVariableReference(new LocalVariableExpression(statement.Name));
+        Space();
+        _builder.Append(AssignmentOperatorText(statement.Operator));
+        Space();
+        WriteExpression(statement.Value);
+    }
+
+    private void WritePrint(PrintStatement statement)
+    {
+        if (!EnsureTSqlScript("PRINT")) return;
+        Keyword("PRINT");
+        Space();
+        WriteExpression(statement.Value);
+    }
+
+    private void WriteExecuteSql(ExecuteSqlStatement statement)
+    {
+        if (!EnsureTSqlScript("dynamic SQL execution")) return;
+        if (!DynamicSqlCommands.IsSupported(statement.Command))
+            throw new InvalidOperationException("Dynamic SQL commands require string literals, variables, or their concatenation.");
+        Keyword("EXEC");
+        _builder.Append('(');
+        WriteExpression(statement.Command);
+        _builder.Append(')');
+    }
+
+    private void WriteTransaction(TransactionStatement statement)
+    {
+        if (!EnsureTSqlScript("transactions")) return;
+        if (!statement.HasValidModifiers)
+            throw new InvalidOperationException("Invalid transaction modifiers.");
+        Keyword(statement.Kind switch
+        {
+            TransactionKind.Begin => "BEGIN TRANSACTION",
+            TransactionKind.Commit => statement.IsWork ? "COMMIT WORK" : "COMMIT TRANSACTION",
+            TransactionKind.Rollback => statement.IsWork ? "ROLLBACK WORK" : "ROLLBACK TRANSACTION",
+            _ => throw new ArgumentOutOfRangeException(nameof(statement)),
+        });
+        if (statement.Name is not null)
+        {
+            Space();
+            WriteExpression(statement.Name);
+        }
+        if (statement.DelayedDurability is { } delayedDurability)
+        {
+            Space();
+            Keyword("WITH");
+            _builder.Append(" (");
+            Keyword("DELAYED_DURABILITY");
+            _builder.Append(" = ");
+            Keyword(delayedDurability ? "ON" : "OFF");
+            _builder.Append(')');
+        }
+        if (!statement.HasMark) return;
+        Space();
+        Keyword("WITH MARK");
+        if (statement.Mark is not null)
+        {
+            Space();
+            WriteExpression(statement.Mark);
+        }
     }
 
     private void WriteDropProcedure(DropProcedureStatement drop)
@@ -234,6 +355,7 @@ public sealed partial class SqlGenerator
     private void WriteCallProcedure(CallProcedureStatement call)
     {
         if (!EnsureProcedureSupported(call)) return;
+        if (call.ReturnVariable is not null && !EnsureTSqlScript("procedure return assignments")) return;
         if (!CanRepresent(call.Arguments))
         {
             Unsupported($"{_dialect.Name} cannot represent named stored procedure arguments.");

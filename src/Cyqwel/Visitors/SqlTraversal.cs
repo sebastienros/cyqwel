@@ -46,7 +46,8 @@ public static class SqlTraversal
 
     public static IReadOnlyList<string> GetTableNames(this SqlNode node) =>
         node.FindAll<TableName>()
-            .Select(static table => string.Join('.', table.Parts.Select(static part => part.Value)))
+            .Select(static table => (table.IsVariable ? "@" : "") +
+                string.Join('.', table.Parts.Select(static part => part.Value)))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 

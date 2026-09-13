@@ -46,6 +46,91 @@ public static class Sql
 
     public static ParameterExpression Param(string name, char prefix = '@') => new(name, prefix);
 
+    public static JsonArrayAggregateExpression JsonArrayAgg(
+        SqlExpression expression,
+        IReadOnlyList<OrderByItem>? orderBy = null,
+        JsonNullHandling? nullHandling = null)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        if (nullHandling.HasValue && !Enum.IsDefined(nullHandling.Value))
+            throw new ArgumentOutOfRangeException(nameof(nullHandling));
+        return new(expression, orderBy, nullHandling);
+    }
+
+    public static BinaryExpression AnsiConcat(SqlExpression left, SqlExpression right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        return new(left, BinaryOperator.AnsiConcatenate, right);
+    }
+
+    public static ConvertExpression Convert(
+        SqlExpression expression, SqlDataType dataType, SqlExpression? style = null, bool isTry = false)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        ArgumentNullException.ThrowIfNull(dataType);
+        return new(expression, dataType, style, isTry);
+    }
+
+    public static QuantifiedComparisonExpression QuantifiedComparison(
+        SqlExpression left,
+        BinaryOperator @operator,
+        SqlQuantifier quantifier,
+        SqlQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(query);
+        if (!QuantifiedComparisonExpression.IsValidOperator(@operator))
+            throw new ArgumentOutOfRangeException(nameof(@operator));
+        if (!Enum.IsDefined(quantifier)) throw new ArgumentOutOfRangeException(nameof(quantifier));
+        return new(left, @operator, quantifier, query);
+    }
+
+    public static SqlDataType MaxLengthType(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (!(name.Equals("VARCHAR", StringComparison.OrdinalIgnoreCase) ||
+              name.Equals("NVARCHAR", StringComparison.OrdinalIgnoreCase) ||
+              name.Equals("VARBINARY", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException("MAX length requires VARCHAR, NVARCHAR, or VARBINARY.", nameof(name));
+        }
+        return new SqlDataType(name) { IsMaxLength = true };
+    }
+
+    public static ParameterExpression SystemVariable(string name) =>
+        new(NormalizeCoreVariableName(name, "@@")) { IsSystemVariable = true };
+
+    public static NamedTable TableVariable(string name, string? alias = null) =>
+        new(new TableName([new SqlIdentifier(NormalizeCoreVariableName(name, "@"))]) { IsVariable = true },
+            alias is null ? null : new SqlIdentifier(alias));
+
+    public static SelectItem SelectAssign(
+        string variable,
+        SqlExpression value,
+        SqlAssignmentOperator @operator = SqlAssignmentOperator.Assign)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (!Enum.IsDefined(@operator)) throw new ArgumentOutOfRangeException(nameof(@operator));
+        return new SelectItem(value)
+        {
+            AssignmentTarget = new SqlIdentifier(NormalizeCoreVariableName(variable, "@")),
+            AssignmentOperator = @operator,
+        };
+    }
+
+    private static string NormalizeCoreVariableName(string name, string prefix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var value = name.StartsWith(prefix, StringComparison.Ordinal) ? name[prefix.Length..] : name;
+        if (value.Length == 0 || !(value[0] == '_' || char.IsLetter(value[0])) ||
+            value.Any(static c => c is not ('_' or '#' or '@' or '$') && !char.IsLetterOrDigit(c)))
+        {
+            throw new ArgumentException($"Invalid variable name '{name}'.", nameof(name));
+        }
+        return value;
+    }
+
     public static CurrentTimestampExpression CurrentTimestamp(
         CurrentTimestampKind kind = CurrentTimestampKind.Default)
     {
@@ -242,6 +327,8 @@ public static class Sql
     public static TruncateBuilder Truncate(string table) => new(table);
 
     public static CreateViewBuilder CreateView(string view) => new(view);
+    public static CreateInlineFunctionBuilder CreateInlineFunction(string function) => new(function);
+    public static CreateSchemaBuilder CreateSchema(string schema) => new(schema);
 
     public static CreateIndexBuilder CreateIndex(string index, string table) => new(index, table);
 
@@ -276,7 +363,7 @@ public static class Sql
 
     public static ProceduralContinueStatement Continue() => new();
 
-    public static ProceduralReturnStatement Return() => new();
+    public static ProceduralReturnStatement Return(SqlExpression? value = null) => new(value);
 
     public static ColumnDefinition DefineColumn(
         string name,

@@ -257,8 +257,7 @@ public sealed partial class SqlGenerator
 
         internal override void WriteParameter(SqlGenerator sql, ProcedureParameter parameter)
         {
-            sql._builder.Append('@');
-            sql.WriteIdentifier(parameter.Name);
+            sql.WriteTSqlVariableName(parameter.Name);
             sql.Space();
             sql.WriteDataType(parameter.DataType);
             if (parameter.Default is not null)
@@ -275,8 +274,7 @@ public sealed partial class SqlGenerator
         {
             sql.Keyword("DECLARE");
             sql.Space();
-            sql._builder.Append('@');
-            sql.WriteIdentifier(variable.Name);
+            sql.WriteTSqlVariableName(variable.Name);
             sql.Space();
             sql.WriteDataType(variable.DataType);
             WriteInitializer(sql, variable, "=");
@@ -322,6 +320,11 @@ public sealed partial class SqlGenerator
         {
             sql.Keyword("EXEC");
             sql.Space();
+            if (call.ReturnVariable is not null)
+            {
+                sql.WriteTSqlVariableName(call.ReturnVariable);
+                sql._builder.Append(" = ");
+            }
             sql.WriteTableName(call.Name);
             if (call.Arguments.Count > 0) sql.Space();
             sql.WriteSeparated(call.Arguments, sql.WriteProcedureArgument);
@@ -331,8 +334,7 @@ public sealed partial class SqlGenerator
         {
             if (argument.Name is not null)
             {
-                sql._builder.Append('@');
-                sql.WriteIdentifier(argument.Name);
+                sql.WriteTSqlVariableName(argument.Name);
                 sql._builder.Append(" = ");
             }
             sql.WriteExpression(argument.Value);
@@ -343,8 +345,7 @@ public sealed partial class SqlGenerator
 
         internal override void WriteLocalReference(SqlGenerator sql, LocalVariableExpression variable)
         {
-            sql._builder.Append('@');
-            sql.WriteIdentifier(variable.Name);
+            sql.WriteTSqlVariableName(variable.Name);
         }
     }
 

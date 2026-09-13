@@ -73,8 +73,15 @@ public sealed class AlterTableBuilder
 {
     private readonly TableName _name;
     private readonly List<AlterTableAction> _actions = [];
+    private bool? _withCheck;
 
     internal AlterTableBuilder(string name) => _name = new TableName(name);
+
+    public AlterTableBuilder WithCheck(bool value = true)
+    {
+        _withCheck = value;
+        return this;
+    }
 
     public AlterTableBuilder Add(AlterTableAction action)
     {
@@ -104,7 +111,8 @@ public sealed class AlterTableBuilder
         SqlDataType? dataType = null,
         Nullability nullability = Nullability.Unspecified,
         SqlExpression? defaultValue = null,
-        bool dropDefault = false)
+        bool dropDefault = false,
+        SqlIdentifier? collation = null)
     {
         var operationCount =
             (dataType is null ? 0 : 1)
@@ -115,17 +123,27 @@ public sealed class AlterTableBuilder
         {
             throw new ArgumentException("ALTER COLUMN requires exactly one operation.");
         }
+        if (collation is not null && dataType is null)
+            throw new ArgumentException("ALTER COLUMN collation requires a data type.", nameof(collation));
 
         return Add(new AlterColumnAction(
             new SqlIdentifier(column),
             dataType,
             nullability,
             defaultValue,
-            dropDefault));
+            dropDefault) { Collation = collation });
     }
 
     public AlterTableBuilder AddConstraint(TableConstraint constraint) =>
         Add(new AddConstraintAction(constraint));
+
+    public AlterTableBuilder AlterColumnType(
+        string column,
+        SqlDataType dataType,
+        Nullability nullability = Nullability.Unspecified,
+        SqlIdentifier? collation = null) =>
+        Add(new AlterColumnAction(new SqlIdentifier(column),
+            dataType ?? throw new ArgumentNullException(nameof(dataType)), nullability) { Collation = collation });
 
     public AlterTableBuilder DropConstraint(
         string constraint,
@@ -146,7 +164,7 @@ public sealed class AlterTableBuilder
             throw new InvalidOperationException("ALTER TABLE requires at least one action.");
         }
 
-        return new AlterTableStatement(_name, _actions.ToArray());
+        return new AlterTableStatement(_name, _actions.ToArray()) { WithCheck = _withCheck };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
@@ -228,6 +246,8 @@ public sealed class CreateViewBuilder
     private SqlQuery? _query;
     private IReadOnlyList<SqlIdentifier>? _columns;
     private bool _orReplace;
+    private bool _orAlter;
+    private bool _isAlter;
     private bool _isTemporary;
     private ViewSecurity? _security;
 
@@ -251,6 +271,18 @@ public sealed class CreateViewBuilder
         return this;
     }
 
+    public CreateViewBuilder OrAlter(bool value = true)
+    {
+        _orAlter = value;
+        return this;
+    }
+
+    public CreateViewBuilder Alter(bool value = true)
+    {
+        _isAlter = value;
+        return this;
+    }
+
     public CreateViewBuilder Temporary(bool value = true)
     {
         _isTemporary = value;
@@ -270,7 +302,7 @@ public sealed class CreateViewBuilder
             _columns?.ToArray(),
             _orReplace,
             _isTemporary,
-            _security);
+            _security) { OrAlter = _orAlter, IsAlter = _isAlter };
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
         Build().ToSql(dialect, options);
@@ -284,6 +316,13 @@ public sealed class CreateIndexBuilder
     private bool _isUnique;
     private bool _ifNotExists;
     private SqlExpression? _where;
+    private IndexClustering _clustering;
+
+    public CreateIndexBuilder Clustering(IndexClustering value)
+    {
+        _clustering = value;
+        return this;
+    }
 
     internal CreateIndexBuilder(string name, string table)
     {
@@ -340,7 +379,7 @@ public sealed class CreateIndexBuilder
             _columns.ToArray(),
             _isUnique,
             _ifNotExists,
-            _where);
+            _where) { Clustering = _clustering };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>

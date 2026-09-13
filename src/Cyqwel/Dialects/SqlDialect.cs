@@ -267,6 +267,8 @@ public static class SqlDialects
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Plus;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            SupportsTSqlExtensions = true,
+            SupportsDerivedTableColumnAliases = true,
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote | SqlIdentifierQuoteStyle.Brackets,
             ParameterStyles = SqlParameterStyle.AtNamed,
             SupportsNationalStringLiterals = true,
@@ -455,6 +457,7 @@ public static class SqlDialects
         {
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.DollarNumbered,
+            SupportsDerivedTableColumnAliases = true,
             SupportsNationalStringLiterals = true,
             SupportsLimit = true,
             SupportsOffsetOnly = true,
@@ -502,6 +505,7 @@ public static class SqlDialects
             IdentifierQuotes = SqlIdentifierQuoteStyle.Backtick,
             ParameterStyles = SqlParameterStyle.QuestionMark,
             SupportsDoubleQuotedStrings = true,
+            SupportsDerivedTableColumnAliases = true,
             SupportsBackslashStringEscapes = true,
             SupportsNationalStringLiterals = true,
             SupportsExpressionIntervalValues = true,

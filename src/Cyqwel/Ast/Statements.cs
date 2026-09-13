@@ -18,7 +18,10 @@ public sealed record SelectStatement(
     IReadOnlyList<WindowDefinition>? Windows = null,
     SqlExpression? Qualify = null,
     ConnectByClause? ConnectBy = null,
-    bool OrderSiblings = false) : SqlQuery;
+    bool OrderSiblings = false) : SqlQuery
+{
+    public TableName? Into { get; init; }
+}
 
 public sealed record ValuesStatement(
     IReadOnlyList<IReadOnlyList<SqlExpression>> Rows,
@@ -57,7 +60,14 @@ public sealed record InsertStatement(
     IReadOnlyList<IReadOnlyList<SqlExpression>>? Values = null,
     SqlQuery? Source = null,
     IReadOnlyList<SqlExpression>? Returning = null,
-    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement;
+    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement
+{
+    public bool IsDefaultValues { get; init; }
+    public IReadOnlyList<CommonTableExpression>? CommonTableExpressions { get; init; }
+    public SqlExpression? Top { get; init; }
+    public bool IsTopPercent { get; init; }
+    public TSqlOutputClause? Output { get; init; }
+}
 
 public sealed record UpdateStatement(
     NamedTable Target,
@@ -65,14 +75,27 @@ public sealed record UpdateStatement(
     SqlExpression? Where = null,
     IReadOnlyList<SqlExpression>? Returning = null,
     IReadOnlyList<SqlExpression>? ReturningInto = null,
-    TableSource? From = null) : SqlStatement;
+    TableSource? From = null) : SqlStatement
+{
+    public IReadOnlyList<CommonTableExpression>? CommonTableExpressions { get; init; }
+    public SqlExpression? Top { get; init; }
+    public bool IsTopPercent { get; init; }
+    public TSqlOutputClause? Output { get; init; }
+}
 
 public sealed record DeleteStatement(
     NamedTable Target,
     SqlExpression? Where = null,
     IReadOnlyList<SqlExpression>? Returning = null,
     IReadOnlyList<SqlExpression>? ReturningInto = null,
-    TableSource? Using = null) : SqlStatement;
+    TableSource? Using = null) : SqlStatement
+{
+    public IReadOnlyList<CommonTableExpression>? CommonTableExpressions { get; init; }
+    public TableSource? From { get; init; }
+    public SqlExpression? Top { get; init; }
+    public bool IsTopPercent { get; init; }
+    public TSqlOutputClause? Output { get; init; }
+}
 
 public sealed record MergeStatement(
     NamedTable Target,
@@ -80,7 +103,20 @@ public sealed record MergeStatement(
     SqlExpression Condition,
     IReadOnlyList<MergeWhenClause> WhenClauses,
     IReadOnlyList<SqlExpression>? Returning = null,
-    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement;
+    IReadOnlyList<SqlExpression>? ReturningInto = null) : SqlStatement
+{
+    public IReadOnlyList<CommonTableExpression>? CommonTableExpressions { get; init; }
+    public SqlExpression? Top { get; init; }
+    public bool IsTopPercent { get; init; }
+    public TSqlOutputClause? Output { get; init; }
+}
+
+public sealed record TSqlOutputClause(
+    IReadOnlyList<SelectItem> Items,
+    TableName? Into = null,
+    IReadOnlyList<SqlIdentifier>? Columns = null) : SqlNode;
+
+public sealed record MergeActionExpression : SqlExpression;
 
 public sealed record GrantStatement(
     IReadOnlyList<SqlIdentifier> Objects,
@@ -88,4 +124,7 @@ public sealed record GrantStatement(
 
 public sealed record SetStatement(
     IReadOnlyList<SqlIdentifier> Keywords,
-    IReadOnlyList<SqlNode> Arguments) : SqlStatement;
+    IReadOnlyList<SqlNode> Arguments) : SqlStatement
+{
+    public bool? ToggleValue { get; init; }
+}

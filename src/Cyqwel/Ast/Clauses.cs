@@ -2,6 +2,8 @@ namespace Cyqwel.Ast;
 
 public sealed record TableName(IReadOnlyList<SqlIdentifier> Parts) : SqlNode
 {
+    public bool IsVariable { get; init; }
+
     public TableName(string name)
         : this(ParseParts(name))
     {
@@ -10,7 +12,7 @@ public sealed record TableName(IReadOnlyList<SqlIdentifier> Parts) : SqlNode
     private static IReadOnlyList<SqlIdentifier> ParseParts(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return name.Split('.').Select(static part => new SqlIdentifier(part)).ToArray();
+        return name.Split('.').Select(static part => new SqlIdentifier(part) { IsOmitted = part.Length == 0 }).ToArray();
     }
 }
 
@@ -18,13 +20,19 @@ public abstract record TableSource : SqlNode;
 
 public sealed record NamedTable(TableName Name, SqlIdentifier? Alias = null) : TableSource
 {
+    public IReadOnlyList<TSqlTableHint>? Hints { get; init; }
+    public TSqlTableSample? Sample { get; init; }
+
     public NamedTable(string name, string? alias = null)
         : this(new TableName(name), alias is null ? null : new SqlIdentifier(alias))
     {
     }
 }
 
-public sealed record DerivedTable(SqlQuery Query, SqlIdentifier Alias) : TableSource;
+public sealed record DerivedTable(SqlQuery Query, SqlIdentifier Alias) : TableSource
+{
+    public IReadOnlyList<SqlIdentifier>? Columns { get; init; }
+}
 
 public enum JoinKind
 {
@@ -50,10 +58,16 @@ public sealed record JoinTable(
     SqlExpression? Condition = null,
     JoinSyntax Syntax = JoinSyntax.Explicit,
     IReadOnlyList<SqlIdentifier>? Using = null,
-    bool IsNatural = false) : TableSource;
+    bool IsNatural = false) : TableSource
+{
+    public TSqlJoinHint? Hint { get; init; }
+}
 
 public sealed record SelectItem(SqlExpression Expression, SqlIdentifier? Alias = null) : SqlNode
 {
+    public SqlIdentifier? AssignmentTarget { get; init; }
+    public SqlAssignmentOperator AssignmentOperator { get; init; }
+
     public SelectItem(SqlExpression expression, string? alias)
         : this(expression, alias is null ? null : new SqlIdentifier(alias))
     {
@@ -85,7 +99,24 @@ public sealed record CommonTableExpression(
     IReadOnlyList<SqlIdentifier>? Columns = null,
     CteMaterialization Materialization = CteMaterialization.Unspecified) : SqlNode;
 
-public sealed record Assignment(ColumnExpression Column, SqlExpression Value) : SqlNode;
+public enum SqlAssignmentOperator
+{
+    Assign,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    Concatenate,
+}
+
+public sealed record Assignment(ColumnExpression Column, SqlExpression Value) : SqlNode
+{
+    public SqlAssignmentOperator Operator { get; init; }
+}
 
 public enum CteMaterialization
 {

@@ -2,6 +2,8 @@ namespace Cyqwel.Ast;
 
 public sealed record SqlIdentifier(string Value, bool IsQuoted = false) : SqlNode
 {
+    public bool IsOmitted { get; init; }
+
     public override string ToString() => Value;
 }
 
@@ -20,7 +22,7 @@ public sealed record ColumnExpression(IReadOnlyList<SqlIdentifier> Parts) : SqlE
     private static IReadOnlyList<SqlIdentifier> ParseParts(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return name.Split('.').Select(static part => new SqlIdentifier(part)).ToArray();
+        return name.Split('.').Select(static part => new SqlIdentifier(part) { IsOmitted = part.Length == 0 }).ToArray();
     }
 }
 
@@ -66,7 +68,10 @@ public sealed record HexLiteralExpression(string Value) : SqlExpression;
 public sealed record ParameterExpression(
     string Name,
     char Prefix = '@',
-    SqlExpression? DefaultValue = null) : SqlExpression;
+    SqlExpression? DefaultValue = null) : SqlExpression
+{
+    public bool IsSystemVariable { get; init; }
+}
 
 public sealed record ParenthesizedExpression(SqlExpression Expression) : SqlExpression;
 
@@ -105,12 +110,48 @@ public enum BinaryOperator
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
+    AnsiConcatenate,
 }
 
 public sealed record BinaryExpression(
     SqlExpression Left,
     BinaryOperator Operator,
     SqlExpression Right) : SqlExpression;
+
+public enum SqlQuantifier
+{
+    Any,
+    All,
+    Some,
+}
+
+public sealed record QuantifiedComparisonExpression(
+    SqlExpression Left,
+    BinaryOperator Operator,
+    SqlQuantifier Quantifier,
+    SqlQuery Query) : SqlExpression
+{
+    internal static bool IsValidOperator(BinaryOperator value) => value is
+        BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.GreaterThan
+        or BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual;
+}
+
+public sealed record ConvertExpression(
+    SqlExpression Expression,
+    SqlDataType DataType,
+    SqlExpression? Style = null,
+    bool IsTry = false) : SqlExpression;
+
+public enum JsonNullHandling
+{
+    NullOnNull,
+    AbsentOnNull,
+}
+
+public sealed record JsonArrayAggregateExpression(
+    SqlExpression Expression,
+    IReadOnlyList<OrderByItem>? OrderBy = null,
+    JsonNullHandling? NullHandling = null) : SqlExpression;
 
 public sealed record BetweenExpression(
     SqlExpression Expression,
@@ -182,9 +223,17 @@ public sealed record FunctionCallExpression(
     SqlExpression? Filter = null,
     IReadOnlyList<OrderByItem>? WithinGroup = null) : SqlExpression
 {
+    public IReadOnlyList<SqlIdentifier>? Qualifiers { get; init; }
+
     public FunctionCallExpression(string name, params SqlExpression[] arguments)
-        : this(new SqlIdentifier(name), arguments)
+        : this(new TableName(name).Parts, arguments)
     {
+    }
+
+    private FunctionCallExpression(IReadOnlyList<SqlIdentifier> name, IReadOnlyList<SqlExpression> arguments)
+        : this(name[^1], arguments)
+    {
+        Qualifiers = name.Count > 1 ? name.Take(name.Count - 1).ToArray() : null;
     }
 
     public FunctionCallExpression Distinct(bool value = true) => this with { IsDistinct = value };
@@ -267,6 +316,8 @@ public sealed record SqlDataType(
     SqlIdentifier? IntervalEndField = null,
     IReadOnlyList<int>? IntervalEndArguments = null) : SqlNode
 {
+    public bool IsMaxLength { get; init; }
+
     public SqlDataType(string name, params int[] arguments)
         : this(new SqlIdentifier(name), arguments.Length == 0 ? null : arguments)
     {

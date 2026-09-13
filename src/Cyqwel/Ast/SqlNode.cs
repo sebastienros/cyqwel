@@ -37,9 +37,15 @@ public abstract record SqlNode
         (dialect ?? SqlDialects.Generic).Generate(this, options);
 }
 
-public abstract record SqlStatement : SqlNode;
+public abstract record SqlStatement : SqlNode
+{
+    public IReadOnlyList<TSqlQueryOption>? QueryOptions { get; init; }
+}
 
-public abstract record SqlQuery : SqlStatement;
+public abstract record SqlQuery : SqlStatement
+{
+    public TSqlResultFormat? ResultFormat { get; init; }
+}
 
 public abstract record SqlExpression : SqlNode
 {
@@ -112,7 +118,12 @@ public abstract record SqlExpression : SqlNode
 
 public sealed record SqlDocument(IReadOnlyList<SqlStatement> Statements) : SqlNode
 {
+    public IReadOnlyList<SqlBatch>? Batches { get; init; }
+
     public SqlDocument(params SqlStatement[] statements) : this((IReadOnlyList<SqlStatement>)statements)
     {
     }
+
 }
+
+public sealed record SqlBatch(IReadOnlyList<SqlStatement> Statements, bool IsTerminated = false) : SqlNode;

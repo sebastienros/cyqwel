@@ -49,6 +49,13 @@ public sealed partial class SqlGenerator
         switch (node)
         {
             case SqlDocument value: WriteDocument(value); break;
+            case SqlBatch value: WriteBatch(value); break;
+            case DeclareStatement value: WriteDeclare(value); break;
+            case TableVariableDeclarationStatement value: WriteTableVariableDeclaration(value); break;
+            case SetVariableStatement value: WriteSetVariable(value); break;
+            case PrintStatement value: WritePrint(value); break;
+            case ExecuteSqlStatement value: WriteExecuteSql(value); break;
+            case TransactionStatement value: WriteTransaction(value); break;
             case SelectStatement value: WriteSelect(value); break;
             case ValuesStatement value: WriteValues(value); break;
             case SetOperationStatement value: WriteSetOperation(value); break;
@@ -64,6 +71,8 @@ public sealed partial class SqlGenerator
             case DropStatement value: WriteDrop(value); break;
             case TruncateStatement value: WriteTruncate(value); break;
             case CreateViewStatement value: WriteCreateView(value); break;
+            case CreateInlineFunctionStatement value: WriteCreateInlineFunction(value); break;
+            case CreateSchemaStatement value: WriteCreateSchema(value); break;
             case CreateIndexStatement value: WriteCreateIndex(value); break;
             case CreateSequenceStatement value: WriteCreateSequence(value); break;
             case AlterSequenceStatement value: WriteAlterSequence(value); break;
@@ -76,26 +85,67 @@ public sealed partial class SqlGenerator
             case ProceduralWhileStatement value: WriteProceduralWhile(value); break;
             case ProceduralBreakStatement: WriteProceduralLoopControl(isContinue: false); break;
             case ProceduralContinueStatement: WriteProceduralLoopControl(isContinue: true); break;
-            case ProceduralReturnStatement: WriteProceduralReturn(); break;
+            case ProceduralReturnStatement value: WriteProceduralReturn(value); break;
             case SqlExpression value: WriteExpression(value); break;
+            case TableSource value: WriteTableSource(value); break;
+            case OpenJsonColumn value: WriteOpenJsonColumn(value); break;
+            case TSqlQueryOption value: WriteTSqlQueryOption(value); break;
+            case TSqlTableHint value: WriteTSqlTableHint(value); break;
+            case TSqlIndexReference value: WriteTSqlIndexReference(value); break;
+            case TSqlTableSample value: WriteTSqlTableSample(value); break;
+            case TSqlResultFormat value: WriteTSqlResultFormat(value); break;
             default: throw new NotSupportedException($"SQL generation does not support '{node.GetType().Name}' as a root node.");
         }
+
+        if (node is SqlQuery query) WriteTSqlResultFormat(query.ResultFormat);
+        if (node is SqlStatement statement and not MergeStatement) WriteTSqlQueryOptions(statement.QueryOptions);
     }
 
     private void WriteDocument(SqlDocument document)
     {
-        var written = 0;
-        for (var i = 0; i < document.Statements.Count; i++)
+        if (document.Batches is not null)
         {
-            if (ShouldOmitStatement(document.Statements[i])) continue;
+            for (var i = 0; i < document.Batches.Count; i++)
+            {
+                if (i > 0) NewLine();
+                var batch = document.Batches[i];
+                WriteBatch(i < document.Batches.Count - 1 && !batch.IsTerminated
+                    ? batch with { IsTerminated = true } : batch);
+            }
+            return;
+        }
+        WriteDocumentStatements(document.Statements, inferProcedureBatches: true);
+    }
+
+    private void WriteDocumentStatements(IReadOnlyList<SqlStatement> statements, bool inferProcedureBatches)
+    {
+        var written = 0;
+        SqlStatement? previous = null;
+        for (var i = 0; i < statements.Count; i++)
+        {
+            if (ShouldOmitStatement(statements[i])) continue;
 
             if (written > 0)
             {
-                _builder.Append(';');
-                NewLine();
+                if (inferProcedureBatches && _dialect.ParserOptions.SupportsTSqlExtensions
+                    && (previous is CreateProcedureStatement or ReplaceProcedureStatement
+                        || statements[i] is CreateProcedureStatement or ReplaceProcedureStatement))
+                {
+                    NewLine();
+                    Keyword("GO");
+                    NewLine();
+                }
+                else
+                {
+                    if (previous is not MergeStatement || !_dialect.ParserOptions.SupportsTSqlExtensions)
+                        _builder.Append(';');
+                    if (_options.PrettyPrint || !_dialect.ParserOptions.SupportsTSqlExtensions) NewLine();
+                    else Space();
+                }
             }
 
-            WriteNode(document.Statements[i]);
+            WriteNode(statements[i]);
+            previous = statements[i];
             written++;
         }
     }
@@ -169,6 +219,15 @@ public sealed partial class SqlGenerator
 
         SpaceOrNewLine();
         WriteSeparated(select.Projections, WriteSelectItem);
+
+        if (select.Into is not null)
+        {
+            RequireTSql("SELECT INTO");
+            ClauseBreak();
+            Keyword("INTO");
+            Space();
+            WriteTableName(select.Into);
+        }
 
         if (select.From is not null)
         {
@@ -283,7 +342,7 @@ public sealed partial class SqlGenerator
     }
 
     private static bool HasOperandLocalModifiers(SqlQuery query) =>
-        query switch
+        query.ResultFormat is not null || query.QueryOptions is { Count: > 0 } || query switch
         {
             SelectStatement select =>
                 select.OrderBy is { Count: > 0 }
@@ -314,7 +373,11 @@ public sealed partial class SqlGenerator
 
     private void WriteInsert(InsertStatement insert)
     {
-        Keyword("INSERT INTO");
+        WriteCommonTableExpressions(insert.CommonTableExpressions);
+        Keyword("INSERT");
+        WriteMutationTop(insert.Top, insert.IsTopPercent);
+        Space();
+        Keyword("INTO");
         Space();
         WriteTableName(insert.Target);
 
@@ -325,7 +388,15 @@ public sealed partial class SqlGenerator
             _builder.Append(')');
         }
 
-        if (insert.Values is { Count: > 0 })
+        WriteOutput(insert.Output, allowDeleted: false);
+        if (insert.IsDefaultValues)
+        {
+            if (insert.Values is not null || insert.Source is not null)
+                throw new InvalidOperationException("DEFAULT VALUES cannot be combined with another INSERT source.");
+            ClauseBreak();
+            Keyword("DEFAULT VALUES");
+        }
+        else if (insert.Values is { Count: > 0 })
         {
             ClauseBreak();
             Keyword("VALUES");
@@ -352,7 +423,9 @@ public sealed partial class SqlGenerator
 
     private void WriteUpdate(UpdateStatement update)
     {
+        WriteCommonTableExpressions(update.CommonTableExpressions);
         Keyword("UPDATE");
+        WriteMutationTop(update.Top, update.IsTopPercent);
         Space();
         WriteNamedTable(update.Target);
         ClauseBreak();
@@ -360,11 +433,15 @@ public sealed partial class SqlGenerator
         Space();
         WriteSeparated(update.Assignments, assignment =>
         {
+            if (assignment.Operator != SqlAssignmentOperator.Assign) RequireTSqlMutation("compound UPDATE assignments");
             WriteExpression(assignment.Column);
-            _builder.Append(" = ");
+            Space();
+            _builder.Append(AssignmentOperatorText(assignment.Operator));
+            Space();
             WriteExpression(assignment.Value);
         });
 
+        WriteOutput(update.Output);
         if (update.From is not null)
         {
             ClauseBreak();
@@ -405,14 +482,35 @@ public sealed partial class SqlGenerator
             Space();
             WriteSetArgument(argument);
         }
+        if (set.ToggleValue is { } enabled)
+        {
+            Space();
+            Keyword(enabled ? "ON" : "OFF");
+        }
     }
 
     private void WriteDelete(DeleteStatement delete)
     {
-        Keyword("DELETE FROM");
+        WriteCommonTableExpressions(delete.CommonTableExpressions);
+        Keyword("DELETE");
+        WriteMutationTop(delete.Top, delete.IsTopPercent);
+        if (delete.From is null)
+        {
+            Space();
+            Keyword("FROM");
+        }
         Space();
         WriteNamedTable(delete.Target);
 
+        WriteOutput(delete.Output, allowInserted: false);
+        if (delete.From is not null)
+        {
+            RequireTSqlMutation("Joined DELETE");
+            ClauseBreak();
+            Keyword("FROM");
+            Space();
+            WriteTableSource(delete.From);
+        }
         if (delete.Using is not null)
         {
             ClauseBreak();
@@ -625,6 +723,21 @@ public sealed partial class SqlGenerator
 
     private void WriteSelectItem(SelectItem item)
     {
+        if (item.AssignmentTarget is not null)
+        {
+            if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+            {
+                Unsupported($"{_dialect.Name} cannot represent SELECT variable assignments.");
+            }
+            if (item.Alias is not null)
+            {
+                throw new InvalidOperationException("A SELECT variable assignment cannot also have an alias.");
+            }
+            WriteParameter(new ParameterExpression(item.AssignmentTarget.Value));
+            Space();
+            _builder.Append(AssignmentOperatorText(item.AssignmentOperator));
+            Space();
+        }
         WriteExpression(item.Expression);
         if (item.Alias is null) return;
         Space();
@@ -641,6 +754,8 @@ public sealed partial class SqlGenerator
                 WriteNamedTable(named);
                 break;
             case DerivedTable derived:
+                if (derived.Columns is { Count: > 0 } && !_dialect.ParserOptions.SupportsDerivedTableColumnAliases)
+                    Unsupported($"{_dialect.Name} cannot represent derived-table column aliases.");
                 _builder.Append('(');
                 WriteNode(derived.Query);
                 _builder.Append(')');
@@ -651,6 +766,40 @@ public sealed partial class SqlGenerator
                     Space();
                 }
                 WriteIdentifier(derived.Alias);
+                WriteSourceColumns(derived.Columns);
+                break;
+            case TableFunction function:
+                RequireTSql("table-valued function sources");
+                if (function.Columns is { Count: > 0 } && function.Alias is null)
+                    throw new ArgumentException("A table-valued function column alias list requires a table alias.", nameof(table));
+                WriteFunction(function.Function, preserveName: true);
+                WriteSourceAlias(function.Alias);
+                WriteSourceColumns(function.Columns);
+                break;
+            case ParenthesizedTable parenthesized:
+                _builder.Append('(');
+                WriteTableSource(parenthesized.Source);
+                _builder.Append(')');
+                WriteSourceAlias(parenthesized.Alias);
+                break;
+            case DerivedMutationTable mutation:
+                RequireTSql("derived MERGE sources");
+                if (mutation.Statement.Output is not { Into: null })
+                    throw new ArgumentException("A derived MERGE requires OUTPUT without INTO.", nameof(table));
+                _builder.Append('(');
+                WriteMerge(mutation.Statement, terminate: false);
+                _builder.Append(')');
+                WriteSourceAlias(mutation.Alias);
+                WriteSourceColumns(mutation.Columns);
+                break;
+            case OpenJsonTable json:
+                WriteOpenJson(json);
+                break;
+            case PivotTable pivot:
+                WritePivot(pivot);
+                break;
+            case UnpivotTable unpivot:
+                WriteUnpivot(unpivot);
                 break;
             case JoinTable join:
                 WriteTableSource(join.Left);
@@ -667,7 +816,8 @@ public sealed partial class SqlGenerator
                     Keyword("NATURAL");
                     Space();
                 }
-                Keyword(join.Kind switch
+                if (join.Hint is not null) RequireTSql("local join hints");
+                var joinText = join.Kind switch
                 {
                     JoinKind.Inner => "INNER JOIN",
                     JoinKind.Left => "LEFT JOIN",
@@ -677,7 +827,12 @@ public sealed partial class SqlGenerator
                     JoinKind.OuterApply => "OUTER APPLY",
                     JoinKind.CrossApply => "CROSS APPLY",
                     _ => throw new ArgumentOutOfRangeException(),
-                });
+                };
+                if (join.Hint is not null)
+                {
+                    joinText = joinText.Replace(" JOIN", $" {join.Hint.Value.ToString().ToUpperInvariant()} JOIN", StringComparison.Ordinal);
+                }
+                Keyword(joinText);
                 Space();
                 WriteTableSource(join.Right);
                 if (join.Condition is not null)
@@ -705,17 +860,72 @@ public sealed partial class SqlGenerator
     private void WriteNamedTable(NamedTable table)
     {
         WriteTableName(table.Name);
-        if (table.Alias is null) return;
-        Space();
-        if (_dialect.SupportsTableAliasAs)
+        WriteSourceAlias(table.Alias);
+        if (table.Sample is not null)
         {
-            Keyword("AS");
             Space();
+            WriteTSqlTableSample(table.Sample);
         }
-        WriteIdentifier(table.Alias);
+        if (table.Hints is { Count: > 0 })
+        {
+            RequireTSql("table hints");
+            _builder.Append(' ');
+            Keyword("WITH");
+            _builder.Append(" (");
+            WriteSeparated(table.Hints, WriteTSqlTableHint);
+            _builder.Append(')');
+        }
     }
 
-    private void WriteTableName(TableName table) => WriteSeparated(table.Parts, WriteIdentifier, ".");
+    private void WriteTableName(TableName table)
+    {
+        if (table.IsVariable)
+        {
+            if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+            {
+                Unsupported($"{_dialect.Name} cannot represent table variables.");
+            }
+            if (table.Parts.Count != 1 || table.Parts[0].IsOmitted)
+            {
+                throw new InvalidOperationException("A table variable must have one non-omitted name.");
+            }
+            WriteParameter(new ParameterExpression(table.Parts[0].Value));
+            return;
+        }
+        WriteSeparated(table.Parts, WriteNamePart, ".");
+    }
+
+    private void WriteNamePart(SqlIdentifier identifier)
+    {
+        if (!identifier.IsOmitted)
+        {
+            WriteIdentifier(identifier);
+            return;
+        }
+        if (identifier.Value.Length != 0 || identifier.IsQuoted)
+        {
+            throw new InvalidOperationException("An omitted name component cannot contain identifier text.");
+        }
+        if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+        {
+            Unsupported($"{_dialect.Name} cannot represent omitted name components.");
+        }
+    }
+
+    private static string AssignmentOperatorText(SqlAssignmentOperator value) => value switch
+    {
+        SqlAssignmentOperator.Assign => "=",
+        SqlAssignmentOperator.Add => "+=",
+        SqlAssignmentOperator.Subtract => "-=",
+        SqlAssignmentOperator.Multiply => "*=",
+        SqlAssignmentOperator.Divide => "/=",
+        SqlAssignmentOperator.Modulo => "%=",
+        SqlAssignmentOperator.BitwiseAnd => "&=",
+        SqlAssignmentOperator.BitwiseOr => "|=",
+        SqlAssignmentOperator.BitwiseXor => "^=",
+        SqlAssignmentOperator.Concatenate => "||=",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 
     private void WriteExpression(SqlExpression expression, int parentPrecedence = 0)
     {
@@ -737,13 +947,13 @@ public sealed partial class SqlGenerator
                 }
                 else
                 {
-                    WriteSeparated(column.Parts, WriteIdentifier, ".");
+                    WriteSeparated(column.Parts, WriteNamePart, ".");
                 }
                 break;
             case StarExpression star:
                 if (star.Qualifier is { Count: > 0 })
                 {
-                    WriteSeparated(star.Qualifier, WriteIdentifier, ".");
+                    WriteSeparated(star.Qualifier, WriteNamePart, ".");
                     _builder.Append('.');
                 }
 
@@ -782,6 +992,59 @@ public sealed partial class SqlGenerator
                 break;
             case BinaryExpression binary:
                 WriteBinary(binary, precedence);
+                break;
+            case ConvertExpression convert:
+                if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+                    Unsupported($"{_dialect.Name} cannot represent native CONVERT styles.");
+                Keyword(convert.IsTry ? "TRY_CONVERT" : "CONVERT");
+                _builder.Append('(');
+                WriteDataType(convert.DataType);
+                _builder.Append(", ");
+                WriteExpression(convert.Expression);
+                if (convert.Style is not null)
+                {
+                    _builder.Append(", ");
+                    WriteExpression(convert.Style);
+                }
+                _builder.Append(')');
+                break;
+            case JsonArrayAggregateExpression aggregate:
+                if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+                    Unsupported($"{_dialect.Name} cannot represent native JSON_ARRAYAGG clauses.");
+                if (aggregate.NullHandling.HasValue && !Enum.IsDefined(aggregate.NullHandling.Value))
+                    throw new InvalidOperationException("Invalid JSON null-handling mode.");
+                Keyword("JSON_ARRAYAGG");
+                _builder.Append('(');
+                WriteExpression(aggregate.Expression);
+                if (aggregate.OrderBy is { Count: > 0 })
+                {
+                    Space();
+                    Keyword("ORDER BY");
+                    Space();
+                    WriteOrderByItems(aggregate.OrderBy);
+                }
+                if (aggregate.NullHandling.HasValue)
+                {
+                    Space();
+                    Keyword(aggregate.NullHandling == JsonNullHandling.NullOnNull
+                        ? "NULL ON NULL" : "ABSENT ON NULL");
+                }
+                _builder.Append(')');
+                break;
+            case QuantifiedComparisonExpression quantified:
+                if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+                    Unsupported($"{_dialect.Name} cannot represent quantified comparisons.");
+                if (!QuantifiedComparisonExpression.IsValidOperator(quantified.Operator) ||
+                    !Enum.IsDefined(quantified.Quantifier))
+                    throw new InvalidOperationException("Invalid quantified comparison operator or quantifier.");
+                WriteExpression(quantified.Left, precedence + 1);
+                Space();
+                _builder.Append(GetBinaryOperator(quantified.Operator));
+                Space();
+                Keyword(quantified.Quantifier.ToString().ToUpperInvariant());
+                _builder.Append(" (");
+                WriteNode(quantified.Query);
+                _builder.Append(')');
                 break;
             case BetweenExpression between:
                 WriteExpression(between.Expression, precedence + 1);
@@ -929,7 +1192,7 @@ public sealed partial class SqlGenerator
 
     private void WriteBinary(BinaryExpression binary, int precedence)
     {
-        if (binary.Operator == BinaryOperator.Concatenate
+        if (binary.Operator is BinaryOperator.Concatenate or BinaryOperator.AnsiConcatenate
             && _dialect.ConcatenationStyle == SqlConcatenationStyle.Function)
         {
             Keyword("CONCAT");
@@ -973,6 +1236,7 @@ public sealed partial class SqlGenerator
         BinaryOperator.Multiply => "*",
         BinaryOperator.Divide => "/",
         BinaryOperator.Modulo => "%",
+        BinaryOperator.AnsiConcatenate => "||",
         BinaryOperator.Concatenate => _dialect.ConcatenationStyle switch
         {
             SqlConcatenationStyle.DoublePipe => "||",
@@ -986,9 +1250,10 @@ public sealed partial class SqlGenerator
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private void WriteFunction(FunctionCallExpression function)
+    private void WriteFunction(FunctionCallExpression function, bool preserveName = false)
     {
-        var rendered = _dialect.RenderFunction(
+        var qualified = function.Qualifiers is { Count: > 0 };
+        var rendered = preserveName || qualified || function.Name.IsQuoted ? null : _dialect.RenderFunction(
             function,
             expression => new SqlGenerator(_dialect, _options).Generate(expression),
             _options);
@@ -998,7 +1263,13 @@ public sealed partial class SqlGenerator
             return;
         }
 
-        if (function.Name.IsQuoted)
+        if (qualified)
+        {
+            WriteSeparated(function.Qualifiers!, WriteNamePart, ".");
+            _builder.Append('.');
+            WriteIdentifier(function.Name);
+        }
+        else if (preserveName || function.Name.IsQuoted)
         {
             WriteIdentifier(function.Name);
         }
@@ -1131,7 +1402,25 @@ public sealed partial class SqlGenerator
     private void WriteDataType(SqlDataType dataType)
     {
         _builder.Append(dataType.Name.Value);
-        if (dataType.Arguments is { Count: > 0 })
+        if (dataType.IsMaxLength)
+        {
+            if (dataType.Arguments is { Count: > 0 } ||
+                dataType.LengthUnit != SqlDataTypeLengthUnit.Unspecified ||
+                !(dataType.Name.Value.Equals("VARCHAR", StringComparison.OrdinalIgnoreCase) ||
+                  dataType.Name.Value.Equals("NVARCHAR", StringComparison.OrdinalIgnoreCase) ||
+                  dataType.Name.Value.Equals("VARBINARY", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("MAX length requires VARCHAR, NVARCHAR, or VARBINARY without numeric lengths.");
+            }
+            if (!_dialect.ParserOptions.SupportsTSqlExtensions)
+            {
+                Unsupported($"{_dialect.Name} cannot represent MAX-length data types.");
+            }
+            _builder.Append('(');
+            Keyword("MAX");
+            _builder.Append(')');
+        }
+        else if (dataType.Arguments is { Count: > 0 })
         {
             _builder.Append('(');
             WriteSeparated(dataType.Arguments, value => _builder.Append(value.ToString(CultureInfo.InvariantCulture)));
@@ -1171,6 +1460,10 @@ public sealed partial class SqlGenerator
 
     private void WriteIdentifier(SqlIdentifier identifier)
     {
+        if (identifier.IsOmitted)
+        {
+            throw new InvalidOperationException("An omitted name component is only valid inside a multipart name.");
+        }
         if (!_dialect.ShouldQuoteIdentifier(identifier))
         {
             _builder.Append(identifier.Value);
@@ -1185,6 +1478,13 @@ public sealed partial class SqlGenerator
         }
 
         _builder.Append(_dialect.IdentifierCloseQuote);
+    }
+
+    private void WriteTSqlVariableName(SqlIdentifier name)
+    {
+        if (name.IsOmitted || name.IsQuoted)
+            throw new InvalidOperationException("T-SQL variables require an unquoted variable name.");
+        WriteParameter(new ParameterExpression(name.Value));
     }
 
     private void WriteParameter(ParameterExpression parameter)
@@ -1218,12 +1518,22 @@ public sealed partial class SqlGenerator
 
         for (var i = 1; i < parameter.Name.Length; i++)
         {
-            if (parameter.Name[i] != '_' && !char.IsLetterOrDigit(parameter.Name[i]))
+            if (parameter.Name[i] != '_' && !char.IsLetterOrDigit(parameter.Name[i])
+                && !(_dialect.ParserOptions.SupportsTSqlExtensions && parameter.Prefix == '@'
+                    && parameter.Name[i] is '#' or '@' or '$'))
             {
                 throw new InvalidOperationException($"Parameter name '{parameter.Name}' is invalid.");
             }
         }
 
+        if (parameter.IsSystemVariable)
+        {
+            if (parameter.Prefix != '@' || !_dialect.ParserOptions.SupportsTSqlExtensions)
+            {
+                Unsupported($"{_dialect.Name} cannot represent T-SQL system variables.");
+            }
+            _builder.Append('@');
+        }
         _builder.Append(parameter.Prefix).Append(parameter.Name);
     }
 
@@ -1355,19 +1665,23 @@ public sealed partial class SqlGenerator
         }
     }
 
-    private static int GetPrecedence(SqlExpression expression) => expression switch
+    private int GetPrecedence(SqlExpression expression) => expression switch
     {
         BinaryExpression { Operator: BinaryOperator.Or } => 1,
         BinaryExpression { Operator: BinaryOperator.And } => 2,
         BetweenExpression
+            or QuantifiedComparisonExpression
             or InExpression
             or IsNullExpression
             or BooleanTestExpression
             or DistinctFromExpression => 3,
         BinaryExpression { Operator: >= BinaryOperator.Equal and <= BinaryOperator.NotILike } => 3,
+        BinaryExpression { Operator: BinaryOperator.BitwiseAnd or BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor }
+            when _dialect.ParserOptions.SupportsTSqlExtensions => 6,
         BinaryExpression { Operator: BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor } => 4,
         BinaryExpression { Operator: BinaryOperator.BitwiseAnd } => 5,
-        BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Concatenate } => 6,
+        BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract
+            or BinaryOperator.Concatenate or BinaryOperator.AnsiConcatenate } => 6,
         BinaryExpression { Operator: BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo } => 7,
         UnaryExpression or CollateExpression => 8,
         ParenthesizedExpression or WindowExpression or RowExpression => 9,

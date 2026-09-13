@@ -13,7 +13,7 @@ namespace Cyqwel.Parsing;
 /// <summary>
 /// Parses SQL using a single reusable Parlot parser graph.
 /// </summary>
-public static class SqlParser
+public static partial class SqlParser
 {
     private readonly record struct ParserCacheKey(
         SqlDialectParserOptions Options,
@@ -214,15 +214,21 @@ public static class SqlParser
 
         var reservedWords = CreateReservedWords(syntax);
 
-        var unquotedIdentifier = Terms.Identifier()
+        var tSqlRawIdentifier = Literals.Identifier(extraPart: static c => c is '#' or '@' or '$')
+            .When((_, value) => value.ToString()[0] != '$');
+        var unquotedIdentifier = (syntax.SupportsTSqlExtensions
+                ? Terms.Identifier(extraPart: static c => c is '#' or '@' or '$')
+                : Terms.Identifier())
             .Then(span => new SqlIdentifier(span.ToString()))
             .When((_, identifier) =>
                 !reservedWords.Contains(identifier.Value)
-                && (syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$')));
-        var parameterIdentifier = Terms.Identifier()
+                && (syntax.SupportsTSqlExtensions
+                    ? !identifier.Value.StartsWith('$')
+                    : syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$')));
+        var parameterIdentifier = (syntax.SupportsTSqlExtensions ? tSqlRawIdentifier : Terms.Identifier())
             .Then(span => new SqlIdentifier(span.ToString()))
             .When((_, identifier) =>
-                syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$'));
+                syntax.SupportsTSqlExtensions || syntax.DollarSignIsIdentifier || !identifier.Value.Contains('$'));
         var identifierParsers = new List<Parser<SqlIdentifier>>(4);
         if (syntax.IdentifierQuotes.HasFlag(SqlIdentifierQuoteStyle.Brackets))
         {
@@ -239,14 +245,48 @@ public static class SqlParser
             identifierParsers.Add(QuotedIdentifier('`', '`'));
         }
 
+        if (syntax.SupportsTSqlExtensions)
+        {
+            identifierParsers.Add(Terms.Char('#')
+                .SkipAnd(Literals.Pattern(static c => char.IsLetterOrDigit(c) || c is '_' or '#' or '$' or '@', 1))
+                .Then(value => new SqlIdentifier("#" + value.ToString())));
+        }
         identifierParsers.Add(unquotedIdentifier);
         var simpleIdentifier = OneOf(identifierParsers.ToArray());
+        if (syntax.SupportsTSqlExtensions)
+        {
+            simpleIdentifier = Not(new TSqlBatchSeparatorParser()).SkipAnd(simpleIdentifier);
+        }
         var nonKeywordIdentifier = simpleIdentifier;
         var tableIdentifier = simpleIdentifier.Or(TABLE.Then(new SqlIdentifier("TABLE")));
         var identifierParts = Separated(dot, simpleIdentifier);
         var tableIdentifierParts = Separated(dot, tableIdentifier);
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var omittedPart = Not(Not(dot)).Then(new SqlIdentifier("") { IsOmitted = true });
+            identifierParts = Separated(dot, simpleIdentifier.Or(omittedPart))
+                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted);
+            tableIdentifierParts = Separated(dot, tableIdentifier.Or(omittedPart))
+                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted);
+        }
 
         var tableName = tableIdentifierParts.Then(parts => new TableName(parts));
+        if (syntax.SupportsTSqlExtensions)
+        {
+            tableName = Terms.Char('@').SkipAnd(tSqlRawIdentifier)
+                .Then(value => new TableName([new SqlIdentifier(value.ToString())]) { IsVariable = true })
+                .Or(tableName);
+        }
+        var tSqlAssignmentOperator = Terms.Text("||=").Then(SqlAssignmentOperator.Concatenate)
+            .Or(Terms.Text("+=").Then(SqlAssignmentOperator.Add))
+            .Or(Terms.Text("-=").Then(SqlAssignmentOperator.Subtract))
+            .Or(Terms.Text("*=").Then(SqlAssignmentOperator.Multiply))
+            .Or(Terms.Text("/=").Then(SqlAssignmentOperator.Divide))
+            .Or(Terms.Text("%=").Then(SqlAssignmentOperator.Modulo))
+            .Or(Terms.Text("&=").Then(SqlAssignmentOperator.BitwiseAnd))
+            .Or(Terms.Text("|=").Then(SqlAssignmentOperator.BitwiseOr))
+            .Or(Terms.Text("^=").Then(SqlAssignmentOperator.BitwiseXor))
+            .Or(Terms.Char('=').Then(SqlAssignmentOperator.Assign));
         var column = identifierParts.Then<SqlExpression>(parts =>
         {
             if (parts.Count == 1 && !parts[0].IsQuoted)
@@ -291,6 +331,8 @@ public static class SqlParser
         var expression = Deferred<SqlExpression>();
         var query = Deferred<SqlQuery>();
         var tableSource = Deferred<TableSource>();
+        var tSqlDerivedMutation = Deferred<SqlStatement>();
+        tSqlDerivedMutation.Parser = Fail<SqlStatement>();
         var windowSpecification = Deferred<ParsedWindow>();
         var withinGroupOrderBy = Deferred<IReadOnlyList<OrderByItem>>();
         var proceduralStatement = Deferred<SqlStatement>();
@@ -329,17 +371,34 @@ public static class SqlParser
             parameterDefault,
             syntax.ParameterStyles,
             syntax.SupportsParameterDefaults);
+        if (syntax.SupportsTSqlExtensions)
+        {
+            parameter = Terms.Text("@@").SkipAnd(tSqlRawIdentifier)
+                .Then<SqlExpression>(value => new ParameterExpression(value.ToString()) { IsSystemVariable = true })
+                .Or(parameter);
+        }
 
         var argumentList = Separated(comma, expression);
         var functionArguments = DISTINCT.Optional()
             .And(argumentList.Or(Always<IReadOnlyList<SqlExpression>>(Array.Empty<SqlExpression>())))
             .Then(value => new ParsedFunctionArguments(value.Item2, value.Item1.HasValue));
-        var functionCore = simpleIdentifier
+        var functionIdentifier = syntax.SupportsTSqlExtensions
+            ? simpleIdentifier.Or(LEFT.Then(new SqlIdentifier("LEFT"))).Or(RIGHT.Then(new SqlIdentifier("RIGHT")))
+                .Or(REPLACE.Then(new SqlIdentifier("REPLACE")))
+            : simpleIdentifier;
+        var functionName = syntax.SupportsTSqlExtensions
+            ? Separated(dot, functionIdentifier.Or(Not(Not(dot)).Then(new SqlIdentifier("") { IsOmitted = true })))
+                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted)
+            : simpleIdentifier.Then<IReadOnlyList<SqlIdentifier>>(name => [name]);
+        var functionCore = functionName
             .And(Between(leftParenthesis, functionArguments, rightParenthesis))
             .Then(value => new FunctionCallExpression(
-                value.Item1,
+                value.Item1[^1],
                 value.Item2.Arguments,
-                value.Item2.IsDistinct));
+                value.Item2.IsDistinct)
+            {
+                Qualifiers = value.Item1.Count > 1 ? value.Item1.Take(value.Item1.Count - 1).ToArray() : null,
+            });
         var withinGroup = WITHIN.SkipAnd(GROUP)
             .SkipAnd(Between(leftParenthesis, withinGroupOrderBy, rightParenthesis));
         var functionFilter = FILTER.SkipAnd(Between(
@@ -365,12 +424,7 @@ public static class SqlParser
                     Filter = value.Item3.HasValue ? value.Item3.Value : null,
                 };
                 return value.Item4.HasValue
-                    ? new WindowExpression(
-                        call,
-                        value.Item4.Value.PartitionBy,
-                        value.Item4.Value.OrderBy,
-                        value.Item4.Value.Frame,
-                        value.Item4.Value.WindowName)
+                    ? CreateWindowExpression(call, value.Item4.Value)
                     : NormalizeCurrentTimestamp(call, syntax.CurrentTimestampSyntax);
             });
 
@@ -433,6 +487,23 @@ public static class SqlParser
                 value.Item1,
                 value.Item2.HasValue ? value.Item2.Value : null));
         }
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var maxDataType = dataTypeName
+                .When((_, name) => name.Value.Equals("VARCHAR", StringComparison.OrdinalIgnoreCase) ||
+                    name.Value.Equals("NVARCHAR", StringComparison.OrdinalIgnoreCase) ||
+                    name.Value.Equals("VARBINARY", StringComparison.OrdinalIgnoreCase))
+                .AndSkip(Between(leftParenthesis, Keyword("MAX"), rightParenthesis))
+                .Then(name => new SqlDataType(name) { IsMaxLength = true });
+            dataType = maxDataType.Or(dataType);
+        }
+        var tSqlConvert = syntax.SupportsTSqlExtensions
+            ? Keyword("TRY_CONVERT").Then(true).Or(Keyword("CONVERT").Then(false))
+                .AndSkip(leftParenthesis).And(dataType).AndSkip(comma).And(expression)
+                .And(comma.SkipAnd(expression).Optional()).AndSkip(rightParenthesis)
+                .Then<SqlExpression>(value => new ConvertExpression(
+                    value.Item3, value.Item2, value.Item4.HasValue ? value.Item4.Value : null, value.Item1))
+            : Fail<SqlExpression>();
         var cast = CAST.SkipAnd(leftParenthesis)
             .SkipAnd(expression)
             .AndSkip(AS)
@@ -513,7 +584,19 @@ public static class SqlParser
                 value.Item3,
                 value.Item4));
         var trim = trimSpecial.Or(function);
-        var term = tryCast
+        var jsonNullHandling = NULL.SkipAnd(ON).SkipAnd(NULL).Then(JsonNullHandling.NullOnNull)
+            .Or(Keyword("ABSENT").SkipAnd(ON).SkipAnd(NULL).Then(JsonNullHandling.AbsentOnNull));
+        var jsonArrayAggregate = syntax.SupportsTSqlExtensions
+            ? Keyword("JSON_ARRAYAGG").SkipAnd(leftParenthesis).And(expression)
+                .And(withinGroupOrderBy.Optional()).And(jsonNullHandling.Optional()).AndSkip(rightParenthesis)
+                .Then<SqlExpression>(value => new JsonArrayAggregateExpression(
+                    value.Item2, value.Item3.HasValue ? value.Item3.Value : null,
+                    value.Item4.HasValue ? value.Item4.Value : null))
+                .And(over.Optional())
+                .Then<SqlExpression>(value => value.Item2.HasValue
+                    ? CreateWindowExpression(value.Item1, value.Item2.Value) : value.Item1)
+            : Fail<SqlExpression>();
+        var term = jsonArrayAggregate.Or(tSqlConvert).Or(tryCast)
             .Or(cast)
             .Or(extract)
             .Or(interval)
@@ -567,7 +650,9 @@ public static class SqlParser
         {
             additiveOperators.Add((
                 Terms.Text("||").Then(_ => 0),
-                (left, right) => new BinaryExpression(left, BinaryOperator.Concatenate, right)));
+                (left, right) => new BinaryExpression(left,
+                    syntax.SupportsTSqlExtensions ? BinaryOperator.AnsiConcatenate : BinaryOperator.Concatenate,
+                    right)));
         }
 
         additiveOperators.Add((
@@ -576,6 +661,15 @@ public static class SqlParser
         additiveOperators.Add((
             Terms.Char('-').Then(_ => 0),
             (left, right) => new BinaryExpression(left, BinaryOperator.Subtract, right)));
+        if (syntax.SupportsTSqlExtensions)
+        {
+            additiveOperators.Add((Terms.Char('&').Then(_ => 0),
+                (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseAnd, right)));
+            additiveOperators.Add((Terms.Char('^').Then(_ => 0),
+                (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseXor, right)));
+            additiveOperators.Add((Terms.Char('|').Then(_ => 0),
+                (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseOr, right)));
+        }
         var additive = multiplicative.LeftAssociative(additiveOperators.ToArray());
 
         var comparison = additive.LeftAssociative(
@@ -587,7 +681,26 @@ public static class SqlParser
             (Terms.Char('<').Then(_ => 0), (left, right) => new BinaryExpression(left, BinaryOperator.LessThan, right)),
             (Terms.Char('=').Then(_ => 0), (left, right) => new BinaryExpression(left, BinaryOperator.Equal, right)));
 
-        var bitwise = comparison.LeftAssociative(
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var quantifiedOperator = Terms.Text(">=").Then(BinaryOperator.GreaterThanOrEqual)
+                .Or(Terms.Text("<=").Then(BinaryOperator.LessThanOrEqual))
+                .Or(Terms.Text("<>").Then(BinaryOperator.NotEqual))
+                .Or(Terms.Text("!=").Then(BinaryOperator.NotEqual))
+                .Or(Terms.Char('>').Then(BinaryOperator.GreaterThan))
+                .Or(Terms.Char('<').Then(BinaryOperator.LessThan))
+                .Or(Terms.Char('=').Then(BinaryOperator.Equal));
+            var quantifier = Keyword("ANY").Then(SqlQuantifier.Any)
+                .Or(ALL.Then(SqlQuantifier.All))
+                .Or(Keyword("SOME").Then(SqlQuantifier.Some));
+            comparison = additive.And(quantifiedOperator).And(quantifier)
+                .And(Between(leftParenthesis, query, rightParenthesis))
+                .Then<SqlExpression>(value => new QuantifiedComparisonExpression(
+                    value.Item1, value.Item2, value.Item3, value.Item4))
+                .Or(comparison);
+        }
+
+        var bitwise = syntax.SupportsTSqlExtensions ? comparison : comparison.LeftAssociative(
             (Terms.Char('&'), (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseAnd, right)),
             (Terms.Char('^'), (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseXor, right)),
             (Terms.Char('|'), (left, right) => new BinaryExpression(left, BinaryOperator.BitwiseOr, right)));
@@ -751,37 +864,157 @@ public static class SqlParser
             .Then(value => new SelectItem(
                 value.Item1,
                 value.Item2.HasValue ? (SqlIdentifier?)value.Item2.Value : null));
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var aliasName = simpleIdentifier.Or(stringAlias);
+            if (nationalString is not null)
+            {
+                aliasName = CreateStringAliasParser(nationalString).Or(aliasName);
+            }
+            var aliasAssignment = aliasName.AndSkip(Terms.Char('=')).And(expression)
+                .Then(value => new SelectItem(value.Item2, value.Item1));
+            var variableAssignment = Terms.Char('@').SkipAnd(tSqlRawIdentifier)
+                .And(tSqlAssignmentOperator).And(expression)
+                .Then(value => new SelectItem(value.Item3)
+                {
+                    AssignmentTarget = new SqlIdentifier(value.Item1.ToString()),
+                    AssignmentOperator = value.Item2,
+                });
+            selectItem = variableAssignment.Or(aliasAssignment).Or(selectItem);
+        }
         var projections = Separated<char, SelectItem>(comma, selectItem);
 
+        var sourceColumns = Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis);
+        Parser<IReadOnlyList<SqlIdentifier>?> derivedColumns = syntax.SupportsDerivedTableColumnAliases
+            ? sourceColumns.Then<IReadOnlyList<SqlIdentifier>?>(value => value).Or(Always<IReadOnlyList<SqlIdentifier>?>(null))
+            : Always<IReadOnlyList<SqlIdentifier>?>(null);
         var derivedTable = Between(leftParenthesis, query, rightParenthesis)
-            .And(tableAlias)
-            .Then<TableSource>(value => new DerivedTable(value.Item1, value.Item2));
+            .And(tableAlias).And(derivedColumns)
+            .Then<TableSource>(value => new DerivedTable(value.Item1, value.Item2)
+            {
+                Columns = value.Item3,
+            });
         var namedTable = tableName.And(tableAlias.Optional())
             .Then<TableSource>(value => new NamedTable(
                 value.Item1,
                 value.Item2.HasValue ? (SqlIdentifier?)value.Item2.Value : null));
-        var tablePrimary = derivedTable.Or(namedTable);
+        var namedQueryTable = namedTable;
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var indexReference = simpleIdentifier.Then(name => new TSqlIndexReference(Name: name))
+                .Or(Terms.Integer().When((_, value) => value >= 0 && value <= int.MaxValue)
+                    .Then(value => new TSqlIndexReference(Id: (int)value)));
+            var indexHint = Keyword("INDEX").SkipAnd(
+                    Between(leftParenthesis, Separated(comma, indexReference), rightParenthesis)
+                        .Then<IReadOnlyList<TSqlIndexReference>>(value => value)
+                    .Or(Terms.Char('=').SkipAnd(indexReference)
+                        .Then<IReadOnlyList<TSqlIndexReference>>(value => [value])))
+                .Then(indexes => new TSqlTableHint(TSqlTableHintKind.Index, indexes));
+            var tableHint = OneOf(Enum.GetValues<TSqlTableHintKind>()
+                .Where(hint => hint != TSqlTableHintKind.Index)
+                .Select(hint => Keyword(hint.ToString().ToUpperInvariant()).Then(new TSqlTableHint(hint))).ToArray())
+                .Or(indexHint);
+            var tableHints = WITH.SkipAnd(Between(leftParenthesis, Separated(comma, tableHint), rightParenthesis));
+            var sample = Keyword("TABLESAMPLE").SkipAnd(Keyword("SYSTEM").Optional())
+                .And(Between(leftParenthesis, number.And(
+                    PERCENT.Then(TSqlTableSampleUnit.Percent)
+                        .Or(ROWS.Then(TSqlTableSampleUnit.Rows))
+                        .Or(Always(TSqlTableSampleUnit.Unspecified))), rightParenthesis))
+                .Then(value => new TSqlTableSample((LiteralExpression)value.Item2.Item1, value.Item2.Item2, value.Item1.HasValue))
+                .When((_, value) => value.IsValid);
+            namedQueryTable = namedTable.And(sample.Optional()).And(tableHints.Optional())
+                .Then<TableSource>(value => ((NamedTable)value.Item1) with
+                {
+                    Sample = value.Item2.HasValue ? value.Item2.Value : null,
+                    Hints = value.Item3.HasValue ? value.Item3.Value : null,
+                });
+            namedTable = namedTable.And(tableHints.Optional())
+                .Then<TableSource>(value => ((NamedTable)value.Item1) with
+                {
+                    Hints = value.Item2.HasValue ? value.Item2.Value : null,
+                });
+        }
+        var parenthesizedTable = Between(leftParenthesis, tableSource, rightParenthesis)
+            .And(tableAlias.Optional())
+            .Then<TableSource>(value => new ParenthesizedTable(value.Item1, value.Item2.HasValue ? value.Item2.Value : null));
+        var tablePrimary = derivedTable.Or(parenthesizedTable).Or(namedQueryTable);
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var tableFunction = functionCore
+                .When((_, function) => function.Qualifiers is { Count: > 0 }
+                    || function.Name.IsQuoted || !function.Name.Value.Equals("OPENJSON", StringComparison.OrdinalIgnoreCase))
+                .And(tableAlias.Optional()).And(sourceColumns.Optional())
+                .When((_, value) => value.Item2.HasValue || !value.Item3.HasValue)
+                .Then<TableSource>(value => new TableFunction(value.Item1,
+                    value.Item2.HasValue ? value.Item2.Value : null,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+            var jsonColumn = simpleIdentifier.And(dataType)
+                .And(stringLiteral.Optional()).And(AS.SkipAnd(Keyword("JSON")).Optional())
+                .Then(value => new OpenJsonColumn(value.Item1, value.Item2,
+                    value.Item3.HasValue ? (LiteralExpression)value.Item3.Value : null,
+                    value.Item4.HasValue));
+            var jsonArguments = Between(leftParenthesis,
+                expression.And(comma.SkipAnd(expression).Optional()), rightParenthesis);
+            var openJson = Keyword("OPENJSON").SkipAnd(jsonArguments)
+                .And(WITH.SkipAnd(Between(leftParenthesis, Separated(comma, jsonColumn), rightParenthesis)).Optional())
+                .And(tableAlias.Optional())
+                .Then<TableSource>(value => new OpenJsonTable(value.Item1.Item1,
+                    value.Item1.Item2.HasValue ? value.Item1.Item2.Value : null,
+                    value.Item2.HasValue ? value.Item2.Value : null,
+                    value.Item3.HasValue ? value.Item3.Value : null));
+            var derivedMutation = Between(leftParenthesis,
+                    tSqlDerivedMutation.When((_, statement) => statement is MergeStatement { Output: { Into: null } }),
+                    rightParenthesis)
+                .And(tableAlias).And(derivedColumns)
+                .Then<TableSource>(value => new DerivedMutationTable((MergeStatement)value.Item1, value.Item2, value.Item3));
+            tablePrimary = derivedMutation.Or(openJson).Or(tableFunction).Or(tablePrimary);
+            var pivot = Keyword("PIVOT").SkipAnd(Between(leftParenthesis,
+                    functionCore.AndSkip(Keyword("FOR")).And(identifierParts.Then(parts => new ColumnExpression(parts)))
+                        .AndSkip(IN).And(sourceColumns), rightParenthesis))
+                .And(tableAlias.Optional())
+                .Then<Func<TableSource, TableSource>>(value => source => new PivotTable(source,
+                    value.Item1.Item1, value.Item1.Item2, value.Item1.Item3,
+                    value.Item2.HasValue ? value.Item2.Value : null));
+            var unpivot = Keyword("UNPIVOT").SkipAnd(Between(leftParenthesis,
+                    simpleIdentifier.AndSkip(Keyword("FOR")).And(simpleIdentifier)
+                        .AndSkip(IN).And(sourceColumns), rightParenthesis))
+                .And(tableAlias.Optional())
+                .Then<Func<TableSource, TableSource>>(value => source => new UnpivotTable(source,
+                    value.Item1.Item1, value.Item1.Item2, value.Item1.Item3,
+                    value.Item2.HasValue ? value.Item2.Value : null));
+            tablePrimary = tablePrimary.And(ZeroOrMany(pivot.Or(unpivot)))
+                .Then(value => value.Item2.Aggregate(value.Item1, (source, transform) => transform(source)));
+        }
 
-        var joinKind = LEFT.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Left)
-            .Or(RIGHT.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Right))
-            .Or(FULL.AndSkip(OUTER.Optional()).AndSkip(JOIN).Then(JoinKind.Full))
-            .Or(CROSS.AndSkip(JOIN).Then(JoinKind.Cross))
-            .Or(CROSS.AndSkip(APPLY).Then(JoinKind.CrossApply))
-            .Or(OUTER.AndSkip(APPLY).Then(JoinKind.OuterApply))
-            .Or(INNER.AndSkip(JOIN).Then(JoinKind.Inner))
-            .Or(JOIN.Then(JoinKind.Inner));
+        Parser<TSqlJoinHint?> localJoinHint = syntax.SupportsTSqlExtensions
+            ? Keyword("HASH").Then<TSqlJoinHint?>(TSqlJoinHint.Hash)
+                .Or(Keyword("LOOP").Then<TSqlJoinHint?>(TSqlJoinHint.Loop))
+                .Or(Keyword("MERGE").Then<TSqlJoinHint?>(TSqlJoinHint.Merge))
+                .Or(Always<TSqlJoinHint?>(null))
+            : Always<TSqlJoinHint?>(null);
+        var ordinaryJoin = LEFT.AndSkip(OUTER.Optional()).Then(JoinKind.Left)
+            .Or(RIGHT.AndSkip(OUTER.Optional()).Then(JoinKind.Right))
+            .Or(FULL.AndSkip(OUTER.Optional()).Then(JoinKind.Full))
+            .Or(INNER.Then(JoinKind.Inner))
+            .Or(Always(JoinKind.Inner))
+            .And(localJoinHint).AndSkip(JOIN);
+        var joinKind = CROSS.AndSkip(JOIN).Then((JoinKind.Cross, (TSqlJoinHint?)null))
+            .Or(CROSS.AndSkip(APPLY).Then((JoinKind.CrossApply, (TSqlJoinHint?)null)))
+            .Or(OUTER.AndSkip(APPLY).Then((JoinKind.OuterApply, (TSqlJoinHint?)null)))
+            .Or(ordinaryJoin);
         var joinCondition = ON.SkipAnd(expression)
             .Then(value => new ParsedJoinCondition(value, null))
             .Or(USING.SkipAnd(Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis))
                 .Then(value => new ParsedJoinCondition(null, value)));
         var join = NATURAL.Optional().And(joinKind).And(tablePrimary).And(joinCondition.Optional())
             .Then(value => new ParsedJoin(
-                value.Item2,
+                value.Item2.Item1,
                 value.Item3,
                 value.Item4.HasValue ? value.Item4.Value.Condition : null,
                 JoinSyntax.Explicit,
                 value.Item4.HasValue ? value.Item4.Value.Using : null,
-                value.Item1.HasValue));
+                value.Item1.HasValue,
+                value.Item2.Item2));
         var commaTable = comma.SkipAnd(tablePrimary)
             .Then(value => new ParsedJoin(JoinKind.Cross, value, null, JoinSyntax.Comma, null, false));
         tableSource.Parser = tablePrimary.And(ZeroOrMany(join.Or(commaTable)))
@@ -797,7 +1030,7 @@ public static class SqlParser
                         parsedJoin.Condition,
                         parsedJoin.Syntax,
                         parsedJoin.Using,
-                        parsedJoin.IsNatural);
+                        parsedJoin.IsNatural) { Hint = parsedJoin.Hint };
                 }
 
                 return result;
@@ -888,9 +1121,12 @@ public static class SqlParser
                 .Or(Always<ConnectByClause?>(null))
             : Always<ConnectByClause?>(null);
 
+        Parser<TableName?> selectInto = syntax.SupportsTSqlExtensions
+            ? INTO.SkipAnd(tableName).Then<TableName?>(value => value).Or(Always<TableName?>(null))
+            : Always<TableName?>(null);
         var selectHead = SELECT.SkipAnd(DISTINCT.Optional())
             .And(top)
-            .And(projections)
+            .And(projections.And(selectInto))
             .And(from.Optional())
             .And(WHERE.SkipAnd(expression).Optional())
             .And(groupBy.Optional())
@@ -898,11 +1134,12 @@ public static class SqlParser
             .Then(value => new ParsedSelectHead(
                 value.Item1.HasValue,
                 value.Item2,
-                value.Item3,
+                value.Item3.Item1,
                 value.Item4.HasValue ? value.Item4.Value : null,
                 value.Item5.HasValue ? value.Item5.Value : null,
                 value.Item6.HasValue ? value.Item6.Value : null,
-                value.Item7.HasValue ? value.Item7.Value : null));
+                value.Item7.HasValue ? value.Item7.Value : null,
+                value.Item3.Item2));
         var selectCore = selectHead
             .And(windows.Optional())
             .And(Keyword("QUALIFY").SkipAnd(expression).Optional())
@@ -922,7 +1159,7 @@ public static class SqlParser
                     WithTies: head.Top?.WithTies ?? false,
                     Windows: parsedWindows.HasValue ? parsedWindows.Value : null,
                     Qualify: parsedQualify.HasValue ? parsedQualify.Value : null,
-                    ConnectBy: parsedConnectBy);
+                    ConnectBy: parsedConnectBy) { Into = head.Into };
             });
 
         var setOperator = UNION.Then(SetOperator.Union)
@@ -943,6 +1180,8 @@ public static class SqlParser
         var setTail = setOperator.And(ALL.Optional()).And(queryPrimary)
             .Then(value => new SetTail(value.Item1, value.Item3, value.Item2.HasValue));
 
+        var tSqlQueryOptions = CreateTSqlQueryOptions(syntax);
+        var tSqlResultFormat = CreateTSqlResultFormat(syntax, stringLiteral);
         var queryBody = queryPrimary
             .And(ZeroOrMany(setTail))
             .And(orderBy.Optional())
@@ -954,7 +1193,9 @@ public static class SqlParser
                 var parsedOrderBy = value.Item3.HasValue ? value.Item3.Value : null;
                 var parsedLimit = value.Item4;
                 return ApplyQueryTail(result, parsedOrderBy, parsedLimit);
-            });
+            })
+            .And(tSqlResultFormat).And(tSqlQueryOptions)
+            .Then(value => value.Item1 with { ResultFormat = value.Item2, QueryOptions = value.Item3 });
 
         var cteColumns = Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis);
         var materialization = NOT.SkipAnd(MATERIALIZED).Then(CteMaterialization.NotMaterialized)
@@ -1022,60 +1263,104 @@ public static class SqlParser
             .And(ON.Then(new SqlIdentifier("ON")).Or(OFF.Then(new SqlIdentifier("OFF"))))
             .Then<SqlStatement>(value => new SetStatement(
                 [new SqlIdentifier("IDENTITY_INSERT")],
-                [value.Item1.TableName, value.Item2]));
+                [value.Item1.TableName]) { ToggleValue = value.Item2.Value == "ON" });
         var setStatistics = SET.SkipAnd(STATISTICS)
             .And(TIME.Then(new SqlIdentifier("TIME")))
             .Then(value => new ParsedSetStatisticsState(value.Item2))
             .And(ON.Then(new SqlIdentifier("ON")).Or(OFF.Then(new SqlIdentifier("OFF"))))
             .Then<SqlStatement>(value => new SetStatement(
                 [new SqlIdentifier("STATISTICS"), value.Item1.Time],
-                [value.Item2]));
+                []) { ToggleValue = value.Item2.Value == "ON" });
         var insertColumns = Between(leftParenthesis, Separated(comma, simpleIdentifier), rightParenthesis);
+        var dmlTop = (syntax.SupportsTSqlExtensions
+            ? TOP.SkipAnd(Between(leftParenthesis, expression, rightParenthesis))
+                .And(PERCENT.Optional()).Then(value => (Value: value.Item1, Percent: value.Item2.HasValue))
+            : Fail<(SqlExpression Value, bool Percent)>()).Optional();
+        var outputItem = Terms.Text("$action", caseInsensitive: true).Then<SqlExpression>(new MergeActionExpression())
+            .Or(expression)
+            .And(alias.Optional())
+            .Then(value => new SelectItem(value.Item1, value.Item2.HasValue ? value.Item2.Value : null));
+        var outputDestination = INTO.SkipAnd(tableName).And(insertColumns.Optional())
+            .Then(value => (Table: value.Item1, Columns: value.Item2.HasValue ? value.Item2.Value : null));
+        var tSqlOutput = (syntax.SupportsTSqlExtensions
+            ? Terms.Text("OUTPUT", caseInsensitive: true).SkipAnd(Separated(comma, outputItem))
+                .And(outputDestination.Optional())
+                .Then(value => new TSqlOutputClause(value.Item1,
+                    value.Item2.HasValue ? value.Item2.Value.Table : null,
+                    value.Item2.HasValue ? value.Item2.Value.Columns : null))
+            : Fail<TSqlOutputClause>()).Optional();
+        var optionalInto = syntax.SupportsTSqlExtensions ? INTO.Optional().Then(_ => true) : INTO.Then(true);
         var insertValues = VALUES.SkipAnd(Separated(comma, valueRow));
         var insertSource = insertValues
             .Then(value => new ParsedInsertSource(value, null))
+            .Or((syntax.SupportsTSqlExtensions ? DEFAULT.SkipAnd(VALUES).Then(new ParsedInsertSource(null, null, true))
+                : Fail<ParsedInsertSource>()))
             .Or(query.Then(value => new ParsedInsertSource(null, value)));
-        var insert = INSERT.SkipAnd(INTO)
-            .SkipAnd(tableName)
+        var insert = INSERT.SkipAnd(dmlTop).AndSkip(optionalInto)
+            .And(tableName)
             .And(insertColumns.Optional())
+            .And(tSqlOutput)
             .And(insertSource)
+            .Then(value => new InsertStatement(
+                value.Item2, value.Item3.HasValue ? value.Item3.Value : null,
+                value.Item5.Values, value.Item5.Query is { QueryOptions: not null } source
+                    ? source with { QueryOptions = null } : value.Item5.Query)
+            {
+                IsDefaultValues = value.Item5.IsDefaultValues,
+                QueryOptions = value.Item5.Query?.QueryOptions,
+                Top = value.Item1.HasValue ? value.Item1.Value.Value : null,
+                IsTopPercent = value.Item1.HasValue && value.Item1.Value.Percent,
+                Output = value.Item4.HasValue ? value.Item4.Value : null,
+            })
             .And(returning)
-            .Then<SqlStatement>(value => new InsertStatement(
-                value.Item1,
-                value.Item2.HasValue ? value.Item2.Value : null,
-                value.Item3.Values,
-                value.Item3.Query,
-                value.Item4?.Expressions,
-                value.Item4?.Into));
+            .And(tSqlQueryOptions)
+            .When((_, value) => value.Item3 is null || value.Item1.QueryOptions is null)
+            .Then<SqlStatement>(value => value.Item1 with { Returning = value.Item2?.Expressions, ReturningInto = value.Item2?.Into,
+                QueryOptions = value.Item3 ?? value.Item1.QueryOptions });
 
+        var mutationAssignmentOperator = syntax.SupportsTSqlExtensions
+            ? tSqlAssignmentOperator
+            : Terms.Char('=').Then(SqlAssignmentOperator.Assign);
         var assignment = identifierParts.Then(parts => new ColumnExpression(parts))
-            .AndSkip(Terms.Char('=')).And(expression)
-            .Then(value => new Assignment(value.Item1, value.Item2));
-        var update = UPDATE.SkipAnd(namedTable)
+            .And(mutationAssignmentOperator).And(expression)
+            .Then(value => new Assignment(value.Item1, value.Item3) { Operator = value.Item2 });
+        var update = UPDATE.SkipAnd(dmlTop).And(namedTable)
             .AndSkip(SET)
             .And(Separated(comma, assignment))
+            .And(tSqlOutput)
             .And(FROM.SkipAnd(tableSource).Optional())
             .And(WHERE.SkipAnd(expression).Optional())
-            .And(returning)
-            .Then<SqlStatement>(value => new UpdateStatement(
-                (NamedTable)value.Item1,
-                value.Item2,
-                value.Item4.HasValue ? value.Item4.Value : null,
-                value.Item5?.Expressions,
-                value.Item5?.Into,
-                value.Item3.HasValue ? value.Item3.Value : null));
+            .Then(value => new UpdateStatement(
+                (NamedTable)value.Item2, value.Item3,
+                value.Item6.HasValue ? value.Item6.Value : null,
+                From: value.Item5.HasValue ? value.Item5.Value : null)
+            {
+                Top = value.Item1.HasValue ? value.Item1.Value.Value : null,
+                IsTopPercent = value.Item1.HasValue && value.Item1.Value.Percent,
+                Output = value.Item4.HasValue ? value.Item4.Value : null,
+            })
+            .And(returning).And(tSqlQueryOptions)
+            .Then<SqlStatement>(value => value.Item1 with { Returning = value.Item2?.Expressions, ReturningInto = value.Item2?.Into, QueryOptions = value.Item3 });
 
-        var delete = DELETE.SkipAnd(FROM)
-            .SkipAnd(namedTable)
+        var delete = DELETE.SkipAnd(dmlTop)
+            .AndSkip(syntax.SupportsTSqlExtensions ? FROM.Optional().Then(_ => true) : FROM.Then(true))
+            .And(namedTable).And(tSqlOutput)
+            .And((syntax.SupportsTSqlExtensions ? FROM.SkipAnd(tableSource) : Fail<TableSource>()).Optional())
             .And(USING.SkipAnd(tableSource).Optional())
             .And(WHERE.SkipAnd(expression).Optional())
+            .Then(value => new DeleteStatement(
+                (NamedTable)value.Item2,
+                value.Item6.HasValue ? value.Item6.Value : null,
+                Using: value.Item5.HasValue ? value.Item5.Value : null)
+            {
+                Top = value.Item1.HasValue ? value.Item1.Value.Value : null,
+                IsTopPercent = value.Item1.HasValue && value.Item1.Value.Percent,
+                Output = value.Item3.HasValue ? value.Item3.Value : null,
+                From = value.Item4.HasValue ? value.Item4.Value : null,
+            })
             .And(returning)
-            .Then<SqlStatement>(value => new DeleteStatement(
-                (NamedTable)value.Item1,
-                value.Item3.HasValue ? value.Item3.Value : null,
-                value.Item4?.Expressions,
-                value.Item4?.Into,
-                value.Item2.HasValue ? value.Item2.Value : null));
+            .And(tSqlQueryOptions)
+            .Then<SqlStatement>(value => value.Item1 with { Returning = value.Item2?.Expressions, ReturningInto = value.Item2?.Into, QueryOptions = value.Item3 });
 
         var mergeUpdate = UPDATE.SkipAnd(SET)
             .SkipAnd(Separated(comma, assignment))
@@ -1093,10 +1378,11 @@ public static class SqlParser
         var mergeDelete = DELETE.Then<MergeAction>(new MergeDeleteAction());
         var mergeMatchKind = MATCHED.Then(MergeMatchKind.Matched)
             .Or(NOT.SkipAnd(MATCHED)
-                .And(BY.SkipAnd(SOURCE).Optional())
-                .Then(value => value.Item2.HasValue
-                    ? MergeMatchKind.NotMatchedBySource
-                    : MergeMatchKind.NotMatched));
+                .And(BY.SkipAnd(SOURCE.Then(MergeMatchKind.NotMatchedBySource)
+                    .Or(syntax.SupportsTSqlExtensions
+                        ? Terms.Text("TARGET", caseInsensitive: true).Then(MergeMatchKind.NotMatched)
+                        : Fail<MergeMatchKind>())).Optional())
+                .Then(value => value.Item2.HasValue ? value.Item2.Value : MergeMatchKind.NotMatched));
         var mergeWhen = WHEN.SkipAnd(mergeMatchKind)
             .And(AND.SkipAnd(expression).Optional())
             .AndSkip(THEN)
@@ -1105,24 +1391,67 @@ public static class SqlParser
                 value.Item1,
                 value.Item3,
                 value.Item2.HasValue ? value.Item2.Value : null));
-        var merge = MERGE.SkipAnd(INTO)
-            .SkipAnd(namedTable)
+        var mergeTarget = namedTable.And((syntax.SupportsTSqlExtensions ? tableAlias : Fail<SqlIdentifier>()).Optional())
+            .When((_, value) => !value.Item2.HasValue || ((NamedTable)value.Item1).Alias is null)
+            .Then(value => value.Item2.HasValue
+                ? ((NamedTable)value.Item1) with { Alias = value.Item2.Value }
+                : (NamedTable)value.Item1);
+        var merge = MERGE.SkipAnd(dmlTop).AndSkip(optionalInto)
+            .And(mergeTarget)
             .AndSkip(USING)
             .And(tableSource)
             .AndSkip(ON)
             .And(expression)
             .And(OneOrMany(mergeWhen))
+            .And(tSqlOutput)
+            .Then(value => new MergeStatement(
+                (NamedTable)value.Item2, value.Item3, value.Item4, value.Item5)
+            {
+                Top = value.Item1.HasValue ? value.Item1.Value.Value : null,
+                IsTopPercent = value.Item1.HasValue && value.Item1.Value.Percent,
+                Output = value.Item6.HasValue ? value.Item6.Value : null,
+            })
             .And(returning)
-            .Then<SqlStatement>(value => new MergeStatement(
-                (NamedTable)value.Item1,
-                value.Item2,
-                value.Item3,
-                value.Item4,
-                value.Item5?.Expressions,
-                value.Item5?.Into));
+            .And(tSqlQueryOptions)
+            .Then<SqlStatement>(value => value.Item1 with { Returning = value.Item2?.Expressions, ReturningInto = value.Item2?.Into, QueryOptions = value.Item3 });
 
-        var columnModifier = DEFAULT.SkipAnd(expression)
-            .Then(value => new ParsedColumnModifier(ParsedColumnModifierKind.Default, value))
+        tSqlDerivedMutation.Parser = merge;
+
+        if (syntax.SupportsTSqlExtensions)
+        {
+            insert = with.And(insert).Then<SqlStatement>(value => ((InsertStatement)value.Item2) with
+                { CommonTableExpressions = value.Item1.Expressions }).Or(insert);
+            update = with.And(update).Then<SqlStatement>(value => ((UpdateStatement)value.Item2) with
+                { CommonTableExpressions = value.Item1.Expressions }).Or(update);
+            delete = with.And(delete).Then<SqlStatement>(value => ((DeleteStatement)value.Item2) with
+                { CommonTableExpressions = value.Item1.Expressions }).Or(delete);
+            merge = with.And(merge).Then<SqlStatement>(value => ((MergeStatement)value.Item2) with
+                { CommonTableExpressions = value.Item1.Expressions }).Or(merge);
+        }
+
+        var clustering = (syntax.SupportsTSqlExtensions
+            ? Terms.Text("NONCLUSTERED", caseInsensitive: true).Then(IndexClustering.Nonclustered)
+                .Or(Terms.Text("CLUSTERED", caseInsensitive: true).Then(IndexClustering.Clustered))
+            : Fail<IndexClustering>()).Optional()
+            .Then(value => value.HasValue ? value.Value : IndexClustering.Unspecified);
+        var columnConstraintName = CONSTRAINT.SkipAnd(simpleIdentifier).Optional();
+        var columnReferenceAction = CASCADE.Then(ReferentialAction.Cascade)
+            .Or(SET.SkipAnd(NULL).Then(ReferentialAction.SetNull))
+            .Or(SET.SkipAnd(DEFAULT).Then(ReferentialAction.SetDefault))
+            .Or(NO.SkipAnd(ACTION).Then(ReferentialAction.NoAction));
+        var inlineColumnConstraint = columnConstraintName.AndSkip(CHECK)
+            .And(Between(leftParenthesis, expression, rightParenthesis))
+            .Then<TableConstraint>(value => new CheckConstraint(value.Item2, value.Item1.HasValue ? value.Item1.Value : null))
+            .Or(columnConstraintName.AndSkip(REFERENCES).And(tableName)
+                .And(insertColumns).And(ON.SkipAnd(DELETE).SkipAnd(columnReferenceAction).Optional())
+                .And(ON.SkipAnd(UPDATE).SkipAnd(columnReferenceAction).Optional())
+                .Then<TableConstraint>(value => new ForeignKeyConstraint([], value.Item2, value.Item3,
+                    value.Item4.HasValue ? value.Item4.Value : ReferentialAction.Unspecified,
+                    value.Item5.HasValue ? value.Item5.Value : ReferentialAction.Unspecified,
+                    value.Item1.HasValue ? value.Item1.Value : null)));
+        var columnModifier = columnConstraintName.AndSkip(DEFAULT).And(expression)
+            .Then(value => new ParsedColumnModifier(ParsedColumnModifierKind.Default, value.Item2,
+                Name: value.Item1.HasValue ? value.Item1.Value : null))
             .Or(GENERATED.SkipAnd(ALWAYS)
                 .SkipAnd(AS)
                 .SkipAnd(IDENTITY)
@@ -1148,12 +1477,24 @@ public static class SqlParser
             .Or(NOT.SkipAnd(NULL)
                 .Then(new ParsedColumnModifier(ParsedColumnModifierKind.NotNull)))
             .Or(NULL.Then(new ParsedColumnModifier(ParsedColumnModifierKind.Null)))
-            .Or(PRIMARY.SkipAnd(KEY)
-                .Then(new ParsedColumnModifier(ParsedColumnModifierKind.PrimaryKey)))
-            .Or(UNIQUE.Then(new ParsedColumnModifier(ParsedColumnModifierKind.Unique)))
-            .Or(IDENTITY.Then(new ParsedColumnModifier(
-                ParsedColumnModifierKind.Identity,
-                Identity: IdentityGeneration.ByDefault)));
+            .Or(columnConstraintName.AndSkip(PRIMARY).AndSkip(KEY).And(clustering)
+                .Then(value => new ParsedColumnModifier(ParsedColumnModifierKind.PrimaryKey,
+                    Name: value.Item1.HasValue ? value.Item1.Value : null, Clustering: value.Item2)))
+            .Or(columnConstraintName.AndSkip(UNIQUE).And(clustering)
+                .Then(value => new ParsedColumnModifier(ParsedColumnModifierKind.Unique,
+                    Name: value.Item1.HasValue ? value.Item1.Value : null, Clustering: value.Item2)))
+            .Or(IDENTITY.SkipAnd((syntax.SupportsTSqlExtensions
+                    ? Between(leftParenthesis, expression.AndSkip(comma).And(expression), rightParenthesis)
+                        .Then(value => (Seed: value.Item1, Increment: value.Item2))
+                    : Fail<(SqlExpression Seed, SqlExpression Increment)>()).Optional())
+                .Then(value => new ParsedColumnModifier(
+                    ParsedColumnModifierKind.Identity, Identity: IdentityGeneration.ByDefault,
+                    Seed: value.HasValue ? value.Value.Seed : null,
+                    Increment: value.HasValue ? value.Value.Increment : null)));
+        columnModifier = columnModifier.Or(COLLATE.SkipAnd(simpleIdentifier)
+            .Then(value => new ParsedColumnModifier(ParsedColumnModifierKind.Collation, Name: value)))
+            .Or(inlineColumnConstraint.Then(value =>
+            new ParsedColumnModifier(ParsedColumnModifierKind.Constraint, Constraint: value)));
         var columnDefinition = simpleIdentifier
             .And(dataType)
             .And(ZeroOrMany(columnModifier))
@@ -1166,6 +1507,13 @@ public static class SqlParser
                 var identity = IdentityGeneration.None;
                 var isPrimaryKey = false;
                 var isUnique = false;
+                SqlExpression? identitySeed = null;
+                SqlExpression? identityIncrement = null;
+                SqlIdentifier? defaultConstraintName = null;
+                SqlIdentifier? keyConstraintName = null;
+                SqlIdentifier? collation = null;
+                var keyClustering = IndexClustering.Unspecified;
+                var constraints = new List<TableConstraint>();
                 foreach (var modifier in value.Item3)
                 {
                     if (modifier.Kind == ParsedColumnModifierKind.Null)
@@ -1179,6 +1527,7 @@ public static class SqlParser
                     else if (modifier.Kind == ParsedColumnModifierKind.Default)
                     {
                         defaultValue = modifier.Expression;
+                        defaultConstraintName = modifier.Name;
                     }
                     else if (modifier.Kind == ParsedColumnModifierKind.Generated)
                     {
@@ -1188,14 +1537,28 @@ public static class SqlParser
                     else if (modifier.Kind == ParsedColumnModifierKind.Identity)
                     {
                         identity = modifier.Identity;
+                        identitySeed = modifier.Seed;
+                        identityIncrement = modifier.Increment;
                     }
                     else if (modifier.Kind == ParsedColumnModifierKind.PrimaryKey)
                     {
                         isPrimaryKey = true;
+                        keyConstraintName = modifier.Name;
+                        keyClustering = modifier.Clustering;
                     }
-                    else
+                    else if (modifier.Kind == ParsedColumnModifierKind.Unique)
                     {
                         isUnique = true;
+                        keyConstraintName = modifier.Name;
+                        keyClustering = modifier.Clustering;
+                    }
+                    else if (modifier.Kind == ParsedColumnModifierKind.Collation)
+                    {
+                        collation = modifier.Name;
+                    }
+                    else if (modifier.Constraint is not null)
+                    {
+                        constraints.Add(modifier.Constraint);
                     }
                 }
 
@@ -1208,7 +1571,14 @@ public static class SqlParser
                     generatedKind,
                     identity,
                     isPrimaryKey,
-                    isUnique);
+                    isUnique)
+                {
+                    IdentitySeed = identitySeed, IdentityIncrement = identityIncrement,
+                    DefaultConstraintName = defaultConstraintName, KeyConstraintName = keyConstraintName,
+                    Clustering = keyClustering,
+                    Constraints = constraints.Count == 0 ? null : constraints,
+                    Collation = collation,
+                };
             });
 
         var indexColumn = expression.And(orderDirection.Optional()).And(nullOrder.Optional())
@@ -1221,16 +1591,22 @@ public static class SqlParser
             Separated(comma, simpleIdentifier),
             rightParenthesis);
         var constraintName = CONSTRAINT.SkipAnd(simpleIdentifier).Optional();
+        var keyColumns = Between(leftParenthesis,
+            Separated(comma, simpleIdentifier.And(orderDirection.Optional())
+                .Then(value => (Name: value.Item1, Direction: value.Item2.HasValue ? value.Item2.Value : OrderDirection.Unspecified))),
+            rightParenthesis);
         var primaryKeyConstraint = constraintName
-            .And(PRIMARY.SkipAnd(KEY).SkipAnd(identifierList))
+            .AndSkip(PRIMARY).AndSkip(KEY).And(clustering).And(keyColumns)
             .Then<TableConstraint>(value => new PrimaryKeyConstraint(
-                value.Item2,
-                value.Item1.HasValue ? value.Item1.Value : null));
+                value.Item3.Select(item => item.Name).ToArray(),
+                value.Item1.HasValue ? value.Item1.Value : null)
+            { Clustering = value.Item2, ColumnDirections = value.Item3.Select(item => item.Direction).ToArray() });
         var uniqueConstraint = constraintName
-            .And(UNIQUE.SkipAnd(identifierList))
+            .AndSkip(UNIQUE).And(clustering).And(keyColumns)
             .Then<TableConstraint>(value => new UniqueConstraint(
-                value.Item2,
-                value.Item1.HasValue ? value.Item1.Value : null));
+                value.Item3.Select(item => item.Name).ToArray(),
+                value.Item1.HasValue ? value.Item1.Value : null)
+            { Clustering = value.Item2, ColumnDirections = value.Item3.Select(item => item.Direction).ToArray() });
         var referentialAction = CASCADE.Then(ReferentialAction.Cascade)
             .Or(RESTRICT.Then(ReferentialAction.Restrict))
             .Or(SET.SkipAnd(NULL).Then(ReferentialAction.SetNull))
@@ -1257,22 +1633,36 @@ public static class SqlParser
             .Then<TableConstraint>(value => new CheckConstraint(
                 value.Item2,
                 value.Item1.HasValue ? value.Item1.Value : null));
+        var defaultConstraint = syntax.SupportsTSqlExtensions
+            ? constraintName.AndSkip(DEFAULT).And(expression).AndSkip(Keyword("FOR")).And(simpleIdentifier)
+                .Then<TableConstraint>(value => new DefaultConstraint(value.Item2, value.Item3)
+                    { Name = value.Item1.HasValue ? value.Item1.Value : null })
+            : Fail<TableConstraint>();
         var indexTableElement = constraintName
             .And(UNIQUE.Optional())
             .And(KEY.Then(true).Or(INDEX.Then(false)))
             .And(simpleIdentifier.Optional())
+            .And(clustering)
             .And(Between(leftParenthesis, Separated(comma, indexColumn), rightParenthesis))
             .Then<TableElement>(value => new IndexTableElement(
                 value.Item4.HasValue ? value.Item4.Value : null,
-                value.Item5,
+                value.Item6,
                 value.Item2.HasValue,
-                value.Item3));
+                value.Item3) { Clustering = value.Item5 });
         var tableConstraint = primaryKeyConstraint
             .Or(uniqueConstraint)
             .Or(foreignKeyConstraint)
-            .Or(checkConstraint);
+            .Or(checkConstraint)
+            .Or(defaultConstraint);
+        var computedColumn = syntax.SupportsTSqlExtensions
+            ? simpleIdentifier.AndSkip(AS).And(expression).And(Keyword("PERSISTED").Optional())
+                .And(NOT.SkipAnd(NULL).Then(Nullability.NotNull).Or(NULL.Then(Nullability.Null)).Optional())
+                .Then<TableElement>(value => new ComputedColumnDefinition(value.Item1, value.Item2, value.Item3.HasValue,
+                    value.Item4.HasValue ? value.Item4.Value : Nullability.Unspecified))
+            : Fail<TableElement>();
         var tableElement = indexTableElement
             .Or(tableConstraint.Then<TableElement>(value => value))
+            .Or(computedColumn)
             .Or(columnDefinition.Then<TableElement>(value => value));
         var tableElements = Between(
             leftParenthesis,
@@ -1304,7 +1694,11 @@ public static class SqlParser
             viewSecurity = Fail<ViewSecurity>().Optional();
         }
 
-        var createView = CREATE.SkipAnd(OR.SkipAnd(REPLACE).Optional())
+        var viewOperation = CREATE.SkipAnd(OR.SkipAnd(REPLACE.Then(1)
+                .Or(syntax.SupportsTSqlExtensions ? ALTER.Then(2) : Fail<int>())).Optional())
+            .Then(value => value.HasValue ? value.Value : 0)
+            .Or(syntax.SupportsTSqlExtensions ? ALTER.Then(3) : Fail<int>());
+        var createView = viewOperation
             .And(TEMPORARY.Optional())
             .And(viewSecurity)
             .AndSkip(VIEW)
@@ -1316,11 +1710,13 @@ public static class SqlParser
                 value.Item4,
                 value.Item6,
                 value.Item5.HasValue ? value.Item5.Value : null,
-                value.Item1.HasValue,
+                value.Item1 == 1,
                 value.Item2.HasValue,
-                value.Item3.HasValue ? value.Item3.Value : null));
+                value.Item3.HasValue ? value.Item3.Value : null)
+            { OrAlter = value.Item1 == 2, IsAlter = value.Item1 == 3 });
 
         var createIndex = CREATE.SkipAnd(UNIQUE.Optional())
+            .And(clustering)
             .AndSkip(INDEX)
             .And(ifNotExists)
             .And(tableName)
@@ -1329,12 +1725,12 @@ public static class SqlParser
             .And(Between(leftParenthesis, Separated(comma, indexColumn), rightParenthesis))
             .And(WHERE.SkipAnd(expression).Optional())
             .Then<SqlStatement>(value => new CreateIndexStatement(
-                value.Item3,
                 value.Item4,
                 value.Item5,
+                value.Item6,
                 value.Item1.HasValue,
-                value.Item2.HasValue,
-                value.Item6.HasValue ? value.Item6.Value : null));
+                value.Item3.HasValue,
+                value.Item7.HasValue ? value.Item7.Value : null) { Clustering = value.Item2 });
 
         var sequenceOption = START.SkipAnd(WITH).SkipAnd(expression)
             .Then(value => new ParsedSequenceOption(ParsedSequenceOptionKind.Start, value))
@@ -1417,6 +1813,14 @@ public static class SqlParser
             .AndSkip(TYPE)
             .And(dataType)
             .Then<AlterTableAction>(value => new AlterColumnAction(value.Item1, value.Item2));
+        var tSqlAlterColumnType = syntax.SupportsTSqlExtensions
+            ? simpleIdentifier.And(dataType)
+                .And(COLLATE.SkipAnd(simpleIdentifier).Optional())
+                .And(NOT.SkipAnd(NULL).Then(Nullability.NotNull).Or(NULL.Then(Nullability.Null)).Optional())
+                .Then<AlterTableAction>(value => new AlterColumnAction(value.Item1, value.Item2,
+                    value.Item4.HasValue ? value.Item4.Value : Nullability.Unspecified)
+                { Collation = value.Item3.HasValue ? value.Item3.Value : null })
+            : Fail<AlterTableAction>();
         var alterColumnDefault = simpleIdentifier
             .AndSkip(SET)
             .AndSkip(DEFAULT)
@@ -1445,7 +1849,8 @@ public static class SqlParser
                 .Or(alterColumnDefault)
                 .Or(alterColumnDropDefault)
                 .Or(alterColumnSetNotNull)
-                .Or(alterColumnDropNotNull));
+                .Or(alterColumnDropNotNull)
+                .Or(tSqlAlterColumnType));
         var alterTableAction = addConstraint
             .Or(addColumn)
             .Or(dropConstraint)
@@ -1455,12 +1860,50 @@ public static class SqlParser
             .Or(renameTable);
         var alterTable = ALTER.SkipAnd(TABLE)
             .SkipAnd(tableName)
-            .And(Separated(comma, alterTableAction))
-            .Then<SqlStatement>(value => new AlterTableStatement(value.Item1, value.Item2));
+            .And((syntax.SupportsTSqlExtensions
+                ? WITH.SkipAnd(CHECK.Then(true).Or(Keyword("NOCHECK").Then(false)))
+                : Fail<bool>()).Optional())
+            .And((syntax.SupportsTSqlExtensions
+                ? ADD.SkipAnd(Separated(comma, tableElement)).Then<IReadOnlyList<AlterTableAction>>(elements =>
+                    elements.Select<TableElement, AlterTableAction>(element => element switch
+                    {
+                        ColumnDefinition column => new AddColumnAction(column),
+                        TableConstraint constraint => new AddConstraintAction(constraint),
+                        _ => new AddTableElementAction(element),
+                    }).ToArray())
+                : Fail<IReadOnlyList<AlterTableAction>>()).Or(Separated(comma, alterTableAction)))
+            .Then<SqlStatement>(value => new AlterTableStatement(value.Item1, value.Item3)
+                { WithCheck = value.Item2.HasValue ? value.Item2.Value : null });
+
+        var tSqlCreateSchema = syntax.SupportsTSqlExtensions
+            ? CREATE.SkipAnd(Keyword("SCHEMA")).SkipAnd(simpleIdentifier)
+                .AndSkip(Not(Keyword("AUTHORIZATION").Or(CREATE).Or(Keyword("GRANT"))))
+                .Then<SqlStatement>(name => new CreateSchemaStatement(name))
+            : Fail<SqlStatement>();
+
+        Parser<SqlStatement> tSqlInlineFunction = Fail<SqlStatement>();
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var inlineParameter = Terms.Char('@').SkipAnd(parameterIdentifier)
+                .AndSkip(AS.Optional()).And(dataType)
+                .And(Terms.Char('=').SkipAnd(expression).Optional())
+                .Then(value => new ProcedureParameter(value.Item1, value.Item2,
+                    Default: value.Item3.HasValue ? value.Item3.Value : null));
+            tSqlInlineFunction = CREATE.SkipAnd(Keyword("FUNCTION")).SkipAnd(tableName)
+                .And(Between(leftParenthesis,
+                    Separated(comma, inlineParameter).Or(Always<IReadOnlyList<ProcedureParameter>>([])), rightParenthesis))
+                .AndSkip(Keyword("RETURNS")).AndSkip(TABLE).AndSkip(AS).AndSkip(Keyword("RETURN"))
+                .And(Between(leftParenthesis, query, rightParenthesis).Or(query))
+                .Then<SqlStatement>(value => new CreateInlineFunctionStatement(value.Item1, value.Item2,
+                    new LocalReferenceRewriter(value.Item2.Select(parameter => parameter.Name.Value)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase), rewriteColumns: false).Visit(value.Item3)));
+        }
 
         Parser<SqlStatement> procedure = Fail<SqlStatement>();
         Parser<SqlStatement> procedural = Fail<SqlStatement>();
-        if (syntax.SupportsStoredProcedures || syntax.SupportsAnonymousProceduralBlocks)
+        Parser<SqlStatement> scriptStatement = Fail<SqlStatement>();
+        var batchSeparator = new TSqlBatchSeparatorParser();
+        if (syntax.SupportsStoredProcedures || syntax.SupportsAnonymousProceduralBlocks || syntax.SupportsTSqlExtensions)
         {
             var atIdentifier = Terms.Char('@').SkipAnd(parameterIdentifier);
             var parameterMode = IN.SkipAnd(OUT).Then(ProcedureParameterMode.InOut)
@@ -1489,6 +1932,7 @@ public static class SqlParser
                     value.Item2.HasValue ? value.Item2.Value : ProcedureParameterMode.In,
                     value.Item4.HasValue ? value.Item4.Value : null));
             var tSqlParameter = atIdentifier
+                .AndSkip(syntax.SupportsTSqlExtensions ? AS.Optional() : Fail<string>().Optional())
                 .And(dataType)
                 .And(Terms.Char('=').SkipAnd(expression).Optional())
                 .And(OUT.Or(OUTPUT).Optional())
@@ -1513,7 +1957,8 @@ public static class SqlParser
                     value.Item1,
                     value.Item2,
                     value.Item3.HasValue ? value.Item3.Value : null));
-            var tSqlVariable = DECLARE.SkipAnd(atIdentifier)
+            var tSqlVariable = atIdentifier
+                .AndSkip(AS.Optional())
                 .And(dataType)
                 .And(Terms.Char('=').SkipAnd(expression).Optional())
                 .Then(value => new LocalVariable(
@@ -1523,6 +1968,12 @@ public static class SqlParser
 
             var bodyStatements = Separated(semicolon, proceduralStatement)
                 .AndSkip(semicolon.Optional());
+            var tSqlStatements = ZeroOrMany(proceduralStatement.AndSkip(ZeroOrMany(semicolon)));
+            var tSqlBlock = BEGIN.SkipAnd(tSqlStatements).AndSkip(END)
+                .Then<SqlStatement>(value => new ProceduralBlock([], value));
+            var tSqlBranch = proceduralStatement.AndSkip(ZeroOrMany(semicolon))
+                .Then<IReadOnlyList<SqlStatement>>(value => value is ProceduralBlock { Variables.Count: 0 } block
+                    ? block.Statements : [value]);
             var tSqlIf = IF.SkipAnd(expression)
                 .AndSkip(BEGIN)
                 .And(bodyStatements)
@@ -1532,6 +1983,13 @@ public static class SqlParser
                     value.Item1,
                     value.Item2,
                     value.Item3.HasValue ? value.Item3.Value : null));
+            if (syntax.SupportsTSqlExtensions)
+            {
+                tSqlIf = IF.SkipAnd(expression).And(tSqlBranch)
+                    .And(ELSE.SkipAnd(tSqlBranch).Optional())
+                    .Then<SqlStatement>(value => new ProceduralIfStatement(
+                        value.Item1, value.Item2, value.Item3.HasValue ? value.Item3.Value : null));
+            }
             var standardIf = IF.SkipAnd(expression)
                 .AndSkip(THEN)
                 .And(bodyStatements)
@@ -1548,6 +2006,11 @@ public static class SqlParser
                 .And(bodyStatements)
                 .AndSkip(END)
                 .Then<SqlStatement>(value => new ProceduralWhileStatement(value.Item1, value.Item2));
+            if (syntax.SupportsTSqlExtensions)
+            {
+                tSqlWhile = WHILE.SkipAnd(expression).And(tSqlBranch)
+                    .Then<SqlStatement>(value => new ProceduralWhileStatement(value.Item1, value.Item2));
+            }
             var loopWhile = WHILE.SkipAnd(expression)
                 .AndSkip(LOOP)
                 .And(bodyStatements)
@@ -1568,6 +2031,8 @@ public static class SqlParser
                     SourceEndLabel = value.Item4.HasValue ? value.Item4.Value : null,
                 });
             var proceduralReturn = Keyword("RETURN").Then<SqlStatement>(new ProceduralReturnStatement());
+            var tSqlReturn = Keyword("RETURN").SkipAnd(expression.Optional())
+                .Then<SqlStatement>(value => new ProceduralReturnStatement(value.HasValue ? value.Value : null));
             var proceduralLeave = LEAVE.SkipAnd(simpleIdentifier).Then<SqlStatement>(label =>
                     label.Value.Equals("cyqwel_body", StringComparison.OrdinalIgnoreCase)
                         ? new ProceduralReturnStatement()
@@ -1595,7 +2060,7 @@ public static class SqlParser
             {
                 proceduralControlFlow.Add(tSqlIf);
                 proceduralControlFlow.Add(tSqlWhile);
-                proceduralControlFlow.Add(proceduralReturn);
+                proceduralControlFlow.Add(syntax.SupportsTSqlExtensions ? tSqlReturn : proceduralReturn);
                 proceduralControlFlow.Add(proceduralBreak);
                 proceduralControlFlow.Add(proceduralContinue);
             }
@@ -1636,6 +2101,8 @@ public static class SqlParser
                 .Or(merge)
                 .Or(createTable)
                 .Or(createView)
+                .Or(tSqlInlineFunction)
+                .Or(tSqlCreateSchema)
                 .Or(createIndex)
                 .Or(createSequence)
                 .Or(alterSequence)
@@ -1643,16 +2110,74 @@ public static class SqlParser
                 .Or(dropStatement)
                 .Or(truncateStatement);
 
+            if (syntax.SupportsTSqlExtensions)
+            {
+                var declaration = DECLARE.SkipAnd(Separated(comma, tSqlVariable))
+                    .Then<SqlStatement>(value => new DeclareStatement(value));
+                var tableDeclaration = DECLARE.SkipAnd(atIdentifier).AndSkip(AS.Optional())
+                    .AndSkip(TABLE).And(tableElements)
+                    .Then<SqlStatement>(value => new TableVariableDeclarationStatement(value.Item1, value.Item2));
+                var setVariable = SET.SkipAnd(atIdentifier).And(tSqlAssignmentOperator).And(expression)
+                    .Then<SqlStatement>(value => new SetVariableStatement(value.Item1, value.Item3, value.Item2));
+                var applicationSet = SET.SkipAnd(
+                        Keyword("NOCOUNT").Or(Keyword("XACT_ABORT")))
+                    .And(Keyword("ON").Then(true).Or(Keyword("OFF").Then(false)))
+                    .Then<SqlStatement>(value => new SetStatement([new SqlIdentifier(value.Item1)], [])
+                    {
+                        ToggleValue = value.Item2,
+                    });
+                var transactionKeyword = Keyword("TRANSACTION").Or(Keyword("TRAN"));
+                var transactionName = atIdentifier.Then<SqlExpression>(name => new ParameterExpression(name.Value))
+                    .Or(simpleIdentifier.Then<SqlExpression>(name => new ColumnExpression([name])));
+                var mark = WITH.SkipAnd(Keyword("MARK")).SkipAnd(expression.Optional());
+                var beginTransaction = BEGIN.SkipAnd(transactionKeyword).SkipAnd(transactionName.Optional())
+                    .And(mark.Optional())
+                    .Then<SqlStatement>(value => new TransactionStatement(
+                        TransactionKind.Begin, value.Item1.HasValue ? value.Item1.Value : null,
+                        HasMark: value.Item2.HasValue,
+                        Mark: value.Item2.HasValue && value.Item2.Value.HasValue ? value.Item2.Value.Value : null));
+                var endTransaction = Keyword("COMMIT").Then(TransactionKind.Commit)
+                    .Or(Keyword("ROLLBACK").Then(TransactionKind.Rollback))
+                    .And(transactionKeyword.Then(false).Or(Keyword("WORK").Then(true)).Optional())
+                    .And(transactionName.Optional())
+                    .And(WITH.SkipAnd(Between(leftParenthesis,
+                        Keyword("DELAYED_DURABILITY").AndSkip(Terms.Char('='))
+                            .SkipAnd(Keyword("ON").Then(true).Or(Keyword("OFF").Then(false))),
+                        rightParenthesis)).Optional())
+                    .Then(value => new TransactionStatement(
+                        value.Item1, value.Item3.HasValue ? value.Item3.Value : null,
+                        value.Item2.HasValue && value.Item2.Value)
+                    {
+                        DelayedDurability = value.Item4.HasValue ? value.Item4.Value : null,
+                    })
+                    .When((_, value) => value.HasValidModifiers)
+                    .Then<SqlStatement>(value => value);
+                scriptStatement = tableDeclaration.Or(declaration).Or(setVariable).Or(applicationSet)
+                    .Or(beginTransaction).Or(endTransaction)
+                    .Or(Keyword("PRINT").SkipAnd(expression).Then<SqlStatement>(value => new PrintStatement(value)))
+                    .Or(EXEC.SkipAnd(Between(leftParenthesis,
+                            expression.When((_, value) => DynamicSqlCommands.IsSupported(value)), rightParenthesis))
+                        .Then<SqlStatement>(value => new ExecuteSqlStatement(value)));
+                proceduralStatement.Parser = Not(batchSeparator).SkipAnd(
+                    scriptStatement.Or(tSqlBlock).Or(proceduralStatement.Parser));
+            }
+
             var standardBody = BEGIN.SkipAnd(ATOMIC.Optional())
                 .SkipAnd(ZeroOrMany(declaredVariable.AndSkip(semicolon)))
                 .And(bodyStatements)
                 .AndSkip(END)
                 .Then(value => new ProceduralBlock(value.Item1, value.Item2));
             var tSqlBody = AS.SkipAnd(BEGIN)
-                .SkipAnd(ZeroOrMany(tSqlVariable.AndSkip(semicolon)))
+                .SkipAnd(ZeroOrMany(DECLARE.SkipAnd(tSqlVariable).AndSkip(semicolon)))
                 .And(bodyStatements)
                 .AndSkip(END)
                 .Then(value => new ProceduralBlock(value.Item1, value.Item2));
+            if (syntax.SupportsTSqlExtensions)
+            {
+                tSqlBody = AS.SkipAnd(OneOrMany(proceduralStatement.AndSkip(ZeroOrMany(semicolon))))
+                    .Then(value => value.Count == 1 && value[0] is ProceduralBlock block
+                        ? block : new ProceduralBlock([], value));
+            }
             var postgreSqlBody = LANGUAGE.SkipAnd(Keyword("plpgsql"))
                 .SkipAnd(AS)
                 .SkipAnd(Terms.Text(ProceduralDollarQuotes.Tag))
@@ -1687,14 +2212,14 @@ public static class SqlParser
                 if (routineGrammar.HasFlag(RoutineGrammar.AtPrefixedBatch))
                 {
                     var tSqlAnonymousBody = BEGIN
-                        .SkipAnd(ZeroOrMany(tSqlVariable.AndSkip(semicolon)))
+                        .SkipAnd(ZeroOrMany(DECLARE.SkipAnd(tSqlVariable).AndSkip(semicolon)))
                         .And(bodyStatements)
                         .AndSkip(END)
                         .Then<SqlStatement>(value => new ProceduralBlock(value.Item1, value.Item2));
-                    anonymousBlocks.Add(tSqlAnonymousBody);
+                    anonymousBlocks.Add(syntax.SupportsTSqlExtensions ? tSqlBlock : tSqlAnonymousBody);
                     anonymousBlocks.Add(tSqlIf);
                     anonymousBlocks.Add(tSqlWhile);
-                    anonymousBlocks.Add(proceduralReturn);
+                    anonymousBlocks.Add(syntax.SupportsTSqlExtensions ? tSqlReturn : proceduralReturn);
                     anonymousBlocks.Add(proceduralBreak);
                     anonymousBlocks.Add(proceduralContinue);
                 }
@@ -1743,6 +2268,10 @@ public static class SqlParser
                         .Then(value => value.HasValue
                             ? value.Value
                             : Array.Empty<ProcedureParameter>());
+                    if (syntax.SupportsTSqlExtensions)
+                    {
+                        parameters = Between(leftParenthesis, parameters, rightParenthesis).Or(parameters);
+                    }
                     definitions.Add(CREATE.SkipAnd(OR.SkipAnd(ALTER).Optional())
                         .AndSkip(tSqlProcedure)
                         .And(tableName)
@@ -1839,6 +2368,19 @@ public static class SqlParser
                 var tSqlCall = EXEC.SkipAnd(tableName)
                     .And(Separated(comma, tSqlNamedArgument.Or(positionalArgument)))
                     .Then<SqlStatement>(value => new CallProcedureStatement(value.Item1, value.Item2));
+                if (syntax.SupportsTSqlExtensions)
+                {
+                    var arguments = Separated(comma, tSqlNamedArgument.Or(positionalArgument))
+                        .Optional().Then(value => value.HasValue ? value.Value : Array.Empty<ProcedureArgument>());
+                    tSqlCall = EXEC.SkipAnd(atIdentifier.AndSkip(Terms.Char('=')).Optional())
+                        .And(tableName)
+                        .And(Between(leftParenthesis, arguments, rightParenthesis).Or(arguments))
+                        .Then<SqlStatement>(value => new CallProcedureStatement(value.Item2, value.Item3)
+                        {
+                            ReturnVariable = value.Item1.HasValue ? value.Item1.Value : null,
+                        });
+                    proceduralStatement.Parser = tSqlCall.Or(proceduralStatement.Parser);
+                }
 
                 var calls = new List<Parser<SqlStatement>>();
                 if ((routineGrammar & ~RoutineGrammar.AtPrefixedBatch) != 0) calls.Add(standardCall);
@@ -1899,6 +2441,7 @@ public static class SqlParser
         var statement = explain
             .Or(procedure)
             .Or(procedural)
+            .Or(scriptStatement)
             .Or(query.Then<SqlStatement>(value => value))
             .Or(grant)
             .Or(setStatement)
@@ -1908,6 +2451,8 @@ public static class SqlParser
             .Or(merge)
             .Or(createTable)
             .Or(createView)
+            .Or(tSqlInlineFunction)
+            .Or(tSqlCreateSchema)
             .Or(createIndex)
             .Or(createSequence)
             .Or(alterSequence)
@@ -1919,6 +2464,36 @@ public static class SqlParser
             .Then(statements => new SqlDocument(statements))
             .AndSkip(Terms.WhiteSpace().Optional())
             .Eof();
+        if (syntax.SupportsTSqlExtensions)
+        {
+            var batch = ZeroOrMany(semicolon).SkipAnd(ZeroOrMany(
+                    Not(batchSeparator).SkipAnd(statement).AndSkip(ZeroOrMany(semicolon))))
+                .And(batchSeparator.Optional())
+                .Then(value => new SqlBatch(value.Item1, value.Item2.HasValue));
+            document = new TSqlDocumentParser(batch)
+                .Then(value =>
+                {
+                    var batches = value.Batches!.Select(source =>
+                    {
+                        var block = new ProceduralBlock([], source.Statements.Where(statement =>
+                            statement is not (CreateProcedureStatement or ReplaceProcedureStatement)).ToArray());
+                        var names = block.FindAll<LocalVariable>().Select(variable => variable.Name.Value)
+                            .Concat(block.FindAll<TableVariableDeclarationStatement>().Select(variable => variable.Name.Value))
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        var rewriter = new LocalReferenceRewriter(names, rewriteColumns: false);
+                        var statements = source.Statements.Select(statement =>
+                            statement is CreateProcedureStatement or ReplaceProcedureStatement
+                                ? statement : rewriter.Visit(statement)).ToArray();
+                        return source with { Statements = statements };
+                    }).ToArray();
+                    return value with
+                    {
+                        Batches = batches,
+                        Statements = batches.SelectMany(source => source.Statements).ToArray(),
+                    };
+                })
+                .AndSkip(Terms.WhiteSpace().Optional()).Eof();
+        }
 
         return document.WithComments(comments => comments
             .WithWhiteSpaceOrNewLine()
@@ -2048,11 +2623,15 @@ public static class SqlParser
 
     private static Parser<string> Keyword(string value) => Terms.Keyword(value, caseInsensitive: true);
 
+    private static WindowExpression CreateWindowExpression(SqlExpression expression, ParsedWindow window) =>
+        new(expression, window.PartitionBy, window.OrderBy, window.Frame, window.WindowName);
+
     private static SqlExpression NormalizeCurrentTimestamp(
         FunctionCallExpression function,
         SqlCurrentTimestampSyntax syntax)
     {
         if (function.Name.IsQuoted
+            || function.Qualifiers is { Count: > 0 }
             || function.IsDistinct
             || function.Filter is not null
             || function.WithinGroup is not null)
@@ -2145,6 +2724,12 @@ public static class SqlParser
             words.UnionWith(["TOP", "PERCENT", "TIES"]);
         }
 
+        if (syntax.SupportsTSqlExtensions)
+        {
+            words.UnionWith(["APPLY", "FOR", "OPTION", "PIVOT", "UNPIVOT", "HASH", "LOOP", "ANY", "SOME", "TABLESAMPLE"]);
+            words.Remove("ACTION");
+        }
+
         if (syntax.SupportsLimit || syntax.SupportsLimitComma)
         {
             words.Add("LIMIT");
@@ -2194,6 +2779,11 @@ public static class SqlParser
             words.UnionWith(["NULLS", "FIRST", "LAST"]);
         }
 
+        if (syntax.SupportsTSqlExtensions)
+        {
+            words.UnionWith(["COMMIT", "ROLLBACK", "TRAN", "TRANSACTION", "PRINT"]);
+        }
+
         return words;
     }
 
@@ -2240,7 +2830,8 @@ public static class SqlParser
         RoutineGrammar routineGrammar)
     {
         var names = parameters.Select(static parameter => parameter.Name.Value)
-            .Concat(block.Variables.Select(static variable => variable.Name.Value))
+            .Concat(block.FindAll<LocalVariable>().Select(static variable => variable.Name.Value))
+            .Concat(block.FindAll<TableVariableDeclarationStatement>().Select(static variable => variable.Name.Value))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return new LocalReferenceRewriter(
             names,
@@ -2251,8 +2842,11 @@ public static class SqlParser
         IReadOnlySet<string> names,
         bool rewriteColumns) : SqlRewriter
     {
+        protected override SqlNode VisitCreateInlineFunction(CreateInlineFunctionStatement node) => node;
+
         protected override SqlNode VisitParameter(ParameterExpression node) =>
-            names.Contains(node.Name) ? new LocalVariableExpression(node.Name) { Span = node.Span } : node;
+            !node.IsSystemVariable && names.Contains(node.Name)
+                ? new LocalVariableExpression(node.Name) { Span = node.Span } : node;
 
         protected override SqlNode VisitColumn(ColumnExpression node) =>
             rewriteColumns && node.Parts.Count == 1 && names.Contains(node.Parts[0].Value)
@@ -2676,7 +3270,8 @@ public static class SqlParser
         SqlExpression? Condition,
         JoinSyntax Syntax,
         IReadOnlyList<SqlIdentifier>? Using,
-        bool IsNatural);
+        bool IsNatural,
+        TSqlJoinHint? Hint = null);
 
     [ExcludeFromCodeCoverage]
     private sealed record ParsedJoinCondition(
@@ -2701,7 +3296,8 @@ public static class SqlParser
         TableSource? From,
         SqlExpression? Where,
         IReadOnlyList<SqlExpression>? GroupBy,
-        SqlExpression? Having);
+        SqlExpression? Having,
+        TableName? Into = null);
 
     [ExcludeFromCodeCoverage]
     private sealed record ParsedTop(SqlExpression Expression, bool IsPercent, bool WithTies);
@@ -2729,7 +3325,8 @@ public static class SqlParser
 
     private readonly record struct ParsedInsertSource(
         IReadOnlyList<IReadOnlyList<SqlExpression>>? Values,
-        SqlQuery? Query);
+        SqlQuery? Query,
+        bool IsDefaultValues = false);
 
     private enum ParsedColumnModifierKind
     {
@@ -2740,6 +3337,8 @@ public static class SqlParser
         Identity,
         PrimaryKey,
         Unique,
+        Constraint,
+        Collation,
     }
 
     [ExcludeFromCodeCoverage]
@@ -2747,7 +3346,12 @@ public static class SqlParser
         ParsedColumnModifierKind Kind,
         SqlExpression? Expression = null,
         GeneratedColumnKind GeneratedKind = GeneratedColumnKind.Virtual,
-        IdentityGeneration Identity = IdentityGeneration.None);
+        IdentityGeneration Identity = IdentityGeneration.None,
+        SqlExpression? Seed = null,
+        SqlExpression? Increment = null,
+        SqlIdentifier? Name = null,
+        IndexClustering Clustering = IndexClustering.Unspecified,
+        TableConstraint? Constraint = null);
 
     private enum ParsedSequenceOptionKind
     {
