@@ -142,6 +142,10 @@ ID-set hashes use ordinal-sorted IDs, each followed by a newline, encoded as
 UTF-8. Original text/provenance and all fixture IDs have additional independent
 digests in the profile. The verifier also pins the canonical complete profile,
 so recomputing counts and checksums cannot silently authorize reclassification.
+Repository attributes require LF checkouts for the byte-pinned profile,
+fixtures, and license, including on Windows with `core.autocrlf=true`.
+Keep those attributes with the data; verification intentionally checks the
+original bytes rather than normalizing line endings before hashing.
 
 ## Verification, separate reports, and regeneration
 

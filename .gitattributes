@@ -1,0 +1,4 @@
+# Preserve the exact bytes covered by the frozen compatibility contract.
+/tools/tsql_compat/core-profile.json text eol=lf
+/tests/Cyqwel.Tests/Fixtures/TSqlCore/sqlglot.json text eol=lf
+/tests/Cyqwel.Tests/Fixtures/TSqlCore/licenses/SQLGlot.LICENSE text eol=lf
