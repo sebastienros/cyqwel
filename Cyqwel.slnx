@@ -5,4 +5,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Cyqwel.Tests/Cyqwel.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Cyqwel.TSqlCompatibility/Cyqwel.TSqlCompatibility.csproj" />
+  </Folder>
 </Solution>

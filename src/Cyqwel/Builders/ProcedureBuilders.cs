@@ -92,6 +92,7 @@ public sealed class CallProcedureBuilder
 {
     private readonly TableName _name;
     private readonly List<ProcedureArgument> _arguments = [];
+    private SqlIdentifier? _returnVariable;
 
     internal CallProcedureBuilder(string name) => _name = new TableName(name);
 
@@ -118,7 +119,13 @@ public sealed class CallProcedureBuilder
     public CallProcedureBuilder NamedArgument(string name, object? value, bool output = false) =>
         NamedArgument(name, Sql.Coerce(value), output);
 
-    public CallProcedureStatement Build() => new(_name, _arguments.ToArray());
+    public CallProcedureBuilder ReturnInto(string name)
+    {
+        _returnVariable = new SqlIdentifier(name);
+        return this;
+    }
+
+    public CallProcedureStatement Build() => new(_name, _arguments.ToArray()) { ReturnVariable = _returnVariable };
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
         Build().ToSql(dialect, options);

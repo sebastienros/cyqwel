@@ -131,14 +131,14 @@ public class ParserTests
                 var tableName = Assert.IsType<TableName>(set.Arguments[0]);
                 Assert.Equal("dbo", tableName.Parts[0].Value);
                 Assert.Equal("Employees", tableName.Parts[1].Value);
-                Assert.Equal("ON", Assert.IsType<SqlIdentifier>(set.Arguments[1]).Value);
+                Assert.True(set.ToggleValue);
             },
             statement =>
             {
                 var set = Assert.IsType<SetStatement>(statement);
                 Assert.Equal("STATISTICS", set.Keywords[0].Value);
                 Assert.Equal("TIME", Assert.IsType<SqlIdentifier>(set.Keywords[1]).Value);
-                Assert.Equal("ON", Assert.IsType<SqlIdentifier>(set.Arguments[0]).Value);
+                Assert.True(set.ToggleValue);
             });
     }
 

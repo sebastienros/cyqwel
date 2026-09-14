@@ -362,7 +362,7 @@ public class DialectParsingTests
 
         Assert.Equal(BinaryOperator.Concatenate, Assert.IsType<BinaryExpression>(postgreSql).Operator);
         Assert.Equal(BinaryOperator.Concatenate, Assert.IsType<BinaryExpression>(sqlite).Operator);
-        Assert.Equal(BinaryOperator.Concatenate, Assert.IsType<BinaryExpression>(tSql).Operator);
+        Assert.Equal(BinaryOperator.AnsiConcatenate, Assert.IsType<BinaryExpression>(tSql).Operator);
         Assert.Equal(BinaryOperator.Or, Assert.IsType<BinaryExpression>(mySql).Operator);
         Assert.Equal("SELECT first_name OR last_name", SqlDialects.MySql.Parse(
             "SELECT first_name || last_name").ToSql(SqlDialects.MySql));

@@ -52,7 +52,52 @@ public sealed record ProceduralContinueStatement : SqlStatement
     internal SqlIdentifier? SourceTargetLabel { get; init; }
 }
 
-public sealed record ProceduralReturnStatement : SqlStatement;
+public sealed record ProceduralReturnStatement(SqlExpression? Value = null) : SqlStatement;
+
+public sealed record PrintStatement(SqlExpression Value) : SqlStatement;
+
+public sealed record ExecuteSqlStatement(SqlExpression Command) : SqlStatement;
+
+public sealed record DeclareStatement(IReadOnlyList<LocalVariable> Variables) : SqlStatement;
+
+public sealed record TableVariableDeclarationStatement(
+    SqlIdentifier Name,
+    IReadOnlyList<TableElement> Elements) : SqlStatement;
+
+public sealed record SetVariableStatement(
+    SqlIdentifier Name,
+    SqlExpression Value,
+    SqlAssignmentOperator Operator = SqlAssignmentOperator.Assign) : SqlStatement;
+
+public enum TransactionKind
+{
+    Begin,
+    Commit,
+    Rollback,
+}
+
+public sealed record TransactionStatement(
+    TransactionKind Kind,
+    SqlExpression? Name = null,
+    bool IsWork = false,
+    bool HasMark = false,
+    SqlExpression? Mark = null) : SqlStatement
+{
+    public bool? DelayedDurability { get; init; }
+
+    internal bool HasValidModifiers =>
+        (Kind == TransactionKind.Begin || !HasMark && Mark is null)
+        && (Kind != TransactionKind.Begin || !IsWork)
+        && (!IsWork || Name is null)
+        && (Mark is null || HasMark)
+        && (DelayedDurability is null || Kind == TransactionKind.Commit);
+}
+
+public enum ApplicationSetOption
+{
+    NoCount,
+    XactAbort,
+}
 
 public sealed record ProcedureArgument(
     SqlExpression Value,
@@ -76,9 +121,23 @@ public sealed record DropProcedureStatement(
 
 public sealed record CallProcedureStatement(
     TableName Name,
-    IReadOnlyList<ProcedureArgument> Arguments) : SqlStatement;
+    IReadOnlyList<ProcedureArgument> Arguments) : SqlStatement
+{
+    public SqlIdentifier? ReturnVariable { get; init; }
+}
 
 internal static class ProceduralDollarQuotes
 {
     public const string Tag = "$cyqwel$";
+}
+
+internal static class DynamicSqlCommands
+{
+    public static bool IsSupported(SqlExpression expression) => expression switch
+    {
+        LiteralExpression { Value: string } or ParameterExpression or LocalVariableExpression => true,
+        BinaryExpression { Operator: BinaryOperator.Add } addition =>
+            IsSupported(addition.Left) && IsSupported(addition.Right),
+        _ => false,
+    };
 }

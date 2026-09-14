@@ -61,8 +61,12 @@ internal enum RoutineGrammar
 /// </summary>
 public sealed record SqlDialectParserOptions
 {
+    public bool SupportsTSqlExtensions { get; init; }
+    public bool SupportsDerivedTableColumnAliases { get; init; }
+
     public static SqlDialectParserOptions Permissive { get; } = new()
     {
+        SupportsDerivedTableColumnAliases = true,
         IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote
             | SqlIdentifierQuoteStyle.Backtick
             | SqlIdentifierQuoteStyle.Brackets,

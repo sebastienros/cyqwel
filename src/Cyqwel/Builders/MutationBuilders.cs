@@ -4,7 +4,7 @@ using Cyqwel.Generation;
 
 namespace Cyqwel;
 
-public sealed class InsertBuilder
+public sealed partial class InsertBuilder
 {
     private readonly TableName _target;
     private IReadOnlyList<SqlIdentifier>? _columns;
@@ -35,6 +35,7 @@ public sealed class InsertBuilder
 
     public InsertBuilder Values(params object?[] values)
     {
+        if (_defaultValues) throw new InvalidOperationException("DEFAULT VALUES cannot be combined with VALUES.");
         if (_source is not null) throw new InvalidOperationException("An INSERT cannot contain both VALUES and a source query.");
         if (values.Length == 0) throw new ArgumentException("At least one value is required.", nameof(values));
         var expectedCount = _columns?.Count ?? (_values.Count == 0 ? null : _values[0].Count);
@@ -51,6 +52,7 @@ public sealed class InsertBuilder
 
     public InsertBuilder From(SqlQuery query)
     {
+        if (_defaultValues) throw new InvalidOperationException("DEFAULT VALUES cannot be combined with a source query.");
         if (_values.Count > 0) throw new InvalidOperationException("An INSERT cannot contain both VALUES and a source query.");
         _source = query ?? throw new ArgumentNullException(nameof(query));
         return this;
@@ -70,12 +72,14 @@ public sealed class InsertBuilder
 
     public InsertStatement Build()
     {
-        if (_source is null && _values.Count == 0)
+        if (!_defaultValues && _source is null && _values.Count == 0)
         {
             throw new InvalidOperationException("An INSERT requires at least one VALUES row or a source query.");
         }
 
         MutationBuilderValidation.ValidateReturningInto(_returning, _returningInto);
+        if (_queryOptions is not null && _source?.QueryOptions is not null)
+            throw new InvalidOperationException("Specify INSERT query options on either the builder or its source, not both.");
 
         return new InsertStatement(
             _target,
@@ -83,16 +87,18 @@ public sealed class InsertBuilder
             _values.Count == 0
                 ? null
                 : _values.Select(static row => (IReadOnlyList<SqlExpression>)row.ToArray()).ToArray(),
-            _source,
+            _source is { QueryOptions: not null } source ? source with { QueryOptions = null } : _source,
             _returning?.ToArray(),
-            _returningInto?.ToArray());
+            _returningInto?.ToArray())
+        { IsDefaultValues = _defaultValues, Top = _top, IsTopPercent = _topPercent, Output = _output, QueryOptions = _queryOptions ?? _source?.QueryOptions,
+            CommonTableExpressions = _ctes.Count == 0 ? null : _ctes.ToArray() };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
         Build().ToSql(dialect, options);
 }
 
-public sealed class UpdateBuilder
+public sealed partial class UpdateBuilder
 {
     private readonly NamedTable _target;
     private readonly List<Assignment> _assignments = [];
@@ -152,14 +158,16 @@ public sealed class UpdateBuilder
             _where,
             _returning?.ToArray(),
             _returningInto?.ToArray(),
-            _from);
+            _from)
+        { Top = _top, IsTopPercent = _topPercent, Output = _output, QueryOptions = _queryOptions,
+            CommonTableExpressions = _ctes.Count == 0 ? null : _ctes.ToArray() };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
         Build().ToSql(dialect, options);
 }
 
-public sealed class DeleteBuilder
+public sealed partial class DeleteBuilder
 {
     private readonly NamedTable _target;
     private SqlExpression? _where;
@@ -210,14 +218,16 @@ public sealed class DeleteBuilder
             _where,
             _returning?.ToArray(),
             _returningInto?.ToArray(),
-            _using);
+            _using)
+        { From = _from, Top = _top, IsTopPercent = _topPercent, Output = _output, QueryOptions = _queryOptions,
+            CommonTableExpressions = _ctes.Count == 0 ? null : _ctes.ToArray() };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>
         Build().ToSql(dialect, options);
 }
 
-public sealed class MergeBuilder
+public sealed partial class MergeBuilder
 {
     private readonly NamedTable _target;
     private TableSource? _source;
@@ -312,7 +322,9 @@ public sealed class MergeBuilder
             _condition,
             _whenClauses.ToArray(),
             _returning?.ToArray(),
-            _returningInto?.ToArray());
+            _returningInto?.ToArray())
+        { Top = _top, IsTopPercent = _topPercent, Output = _output, QueryOptions = _queryOptions,
+            CommonTableExpressions = _ctes.Count == 0 ? null : _ctes.ToArray() };
     }
 
     public string ToSql(SqlDialect? dialect = null, SqlGenerationOptions? options = null) =>

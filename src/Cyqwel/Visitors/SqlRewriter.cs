@@ -11,14 +11,28 @@ public abstract partial class SqlRewriter
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        return node switch
+        var result = node switch
         {
             SqlDocument value => VisitDocument(value),
+            SqlBatch value => VisitBatch(value),
+            DeclareStatement value => VisitDeclare(value),
+            TableVariableDeclarationStatement value => VisitTableVariableDeclaration(value),
+            SetVariableStatement value => VisitSetVariable(value),
+            PrintStatement value => VisitPrint(value),
+            ExecuteSqlStatement value => VisitExecuteSql(value),
+            TransactionStatement value => VisitTransaction(value),
             SelectStatement value => VisitSelect(value),
             ValuesStatement value => VisitValues(value),
             SetOperationStatement value => VisitSetOperation(value),
             ExplainStatement value => VisitExplain(value),
             InsertStatement value => VisitInsert(value),
+            TSqlOutputClause value => VisitTSqlOutput(value),
+            MergeActionExpression value => VisitMergeActionExpression(value),
+            CreateInlineFunctionStatement value => VisitCreateInlineFunction(value),
+            CreateSchemaStatement value => VisitCreateSchema(value),
+            ComputedColumnDefinition value => VisitComputedColumnDefinition(value),
+            DefaultConstraint value => VisitDefaultConstraint(value),
+            AddTableElementAction value => VisitAddTableElement(value),
             UpdateStatement value => VisitUpdate(value),
             DeleteStatement value => VisitDelete(value),
             MergeStatement value => VisitMerge(value),
@@ -54,6 +68,9 @@ public abstract partial class SqlRewriter
             ParenthesizedExpression value => VisitParenthesized(value),
             UnaryExpression value => VisitUnary(value),
             BinaryExpression value => VisitBinary(value),
+            ConvertExpression value => VisitConvert(value),
+            JsonArrayAggregateExpression value => VisitJsonArrayAggregate(value),
+            QuantifiedComparisonExpression value => VisitQuantifiedComparison(value),
             BetweenExpression value => VisitBetween(value),
             InExpression value => VisitIn(value),
             IsNullExpression value => VisitIsNull(value),
@@ -76,7 +93,19 @@ public abstract partial class SqlRewriter
             SqlDataType value => VisitDataType(value),
             TableName value => VisitTableName(value),
             NamedTable value => VisitNamedTable(value),
+            TSqlTableHint value => VisitTSqlTableHint(value),
+            TSqlIndexReference value => VisitTSqlIndexReference(value),
+            TSqlTableSample value => VisitTSqlTableSample(value),
             DerivedTable value => VisitDerivedTable(value),
+            TableFunction value => VisitTableFunction(value),
+            ParenthesizedTable value => VisitParenthesizedTable(value),
+            DerivedMutationTable value => VisitDerivedMutationTable(value),
+            OpenJsonTable value => VisitOpenJsonTable(value),
+            OpenJsonColumn value => VisitOpenJsonColumn(value),
+            PivotTable value => VisitPivotTable(value),
+            UnpivotTable value => VisitUnpivotTable(value),
+            TSqlResultFormat value => VisitTSqlResultFormat(value),
+            TSqlQueryOption value => VisitTSqlQueryOption(value),
             JoinTable value => VisitJoin(value),
             SelectItem value => VisitSelectItem(value),
             OrderByItem value => VisitOrderByItem(value),
@@ -111,14 +140,35 @@ public abstract partial class SqlRewriter
             ProcedureArgument value => VisitProcedureArgument(value),
             _ => throw new NotSupportedException($"Unsupported SQL node type '{node.GetType().Name}'."),
         };
+
+        if (result is SqlQuery query)
+        {
+            var format = VisitOptional(query.ResultFormat);
+            if (!ReferenceEquals(format, query.ResultFormat)) result = query with { ResultFormat = format };
+        }
+        if (result is SqlStatement statement)
+        {
+            var options = VisitOptionalList(statement.QueryOptions);
+            if (!ReferenceEquals(options, statement.QueryOptions)) result = statement with { QueryOptions = options };
+        }
+        return result;
     }
 
     public T Visit<T>(T node) where T : SqlNode => (T)Visit((SqlNode)node);
 
     protected virtual SqlNode VisitCurrentTimestamp(CurrentTimestampExpression node) => node;
 
-    protected virtual SqlNode VisitDocument(SqlDocument node) =>
-        Update(node, VisitList(node.Statements), node.Statements, static (n, statements) => n with { Statements = statements });
+    protected virtual SqlNode VisitDocument(SqlDocument node)
+    {
+        if (node.Batches is null)
+            return Update(node, VisitList(node.Statements), node.Statements, static (n, statements) => n with { Statements = statements });
+        var batches = VisitList(node.Batches);
+        return ReferenceEquals(batches, node.Batches) ? node : node with
+        {
+            Batches = batches,
+            Statements = batches.SelectMany(static batch => batch.Statements).ToArray(),
+        };
+    }
 
     protected virtual SqlNode VisitExplain(ExplainStatement node) =>
         Update(node, Visit(node.Query), node.Query, static (n, query) => n with { Query = query });
@@ -138,6 +188,7 @@ public abstract partial class SqlRewriter
         var windows = VisitOptionalList(node.Windows);
         var qualify = VisitOptional(node.Qualify);
         var connectBy = VisitOptional(node.ConnectBy);
+        var into = VisitOptional(node.Into);
 
         return ReferenceEquals(projections, node.Projections)
             && ReferenceEquals(from, node.From)
@@ -152,6 +203,7 @@ public abstract partial class SqlRewriter
             && ReferenceEquals(windows, node.Windows)
             && ReferenceEquals(qualify, node.Qualify)
             && ReferenceEquals(connectBy, node.ConnectBy)
+            && ReferenceEquals(into, node.Into)
                 ? node
                 : node with
                 {
@@ -168,6 +220,7 @@ public abstract partial class SqlRewriter
                     Windows = windows,
                     Qualify = qualify,
                     ConnectBy = connectBy,
+                    Into = into,
                 };
     }
 
@@ -200,6 +253,9 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitInsert(InsertStatement node)
     {
+        var ctes = VisitOptionalList(node.CommonTableExpressions);
+        var top = VisitOptional(node.Top);
+        var output = VisitOptional(node.Output);
         var target = Visit(node.Target);
         var columns = VisitOptionalList(node.Columns);
         var values = VisitRows(node.Values);
@@ -207,7 +263,8 @@ public abstract partial class SqlRewriter
         var returning = VisitOptionalList(node.Returning);
         var returningInto = VisitOptionalList(node.ReturningInto);
 
-        return ReferenceEquals(target, node.Target)
+        return ReferenceEquals(ctes, node.CommonTableExpressions) && ReferenceEquals(top, node.Top) && ReferenceEquals(output, node.Output)
+            && ReferenceEquals(target, node.Target)
             && ReferenceEquals(columns, node.Columns)
             && ReferenceEquals(values, node.Values)
             && ReferenceEquals(source, node.Source)
@@ -217,6 +274,8 @@ public abstract partial class SqlRewriter
                 : node with
                 {
                     Target = target,
+                    Top = top, Output = output,
+                    CommonTableExpressions = ctes,
                     Columns = columns,
                     Values = values,
                     Source = source,
@@ -227,6 +286,9 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitUpdate(UpdateStatement node)
     {
+        var ctes = VisitOptionalList(node.CommonTableExpressions);
+        var top = VisitOptional(node.Top);
+        var output = VisitOptional(node.Output);
         var target = Visit(node.Target);
         var assignments = VisitList(node.Assignments);
         var where = VisitOptional(node.Where);
@@ -234,7 +296,8 @@ public abstract partial class SqlRewriter
         var returningInto = VisitOptionalList(node.ReturningInto);
         var from = VisitOptional(node.From);
 
-        return ReferenceEquals(target, node.Target)
+        return ReferenceEquals(ctes, node.CommonTableExpressions) && ReferenceEquals(top, node.Top) && ReferenceEquals(output, node.Output)
+            && ReferenceEquals(target, node.Target)
             && ReferenceEquals(assignments, node.Assignments)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
@@ -244,6 +307,8 @@ public abstract partial class SqlRewriter
                 : node with
                 {
                     Target = target,
+                    Top = top, Output = output,
+                    CommonTableExpressions = ctes,
                     Assignments = assignments,
                     Where = where,
                     Returning = returning,
@@ -254,13 +319,18 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitDelete(DeleteStatement node)
     {
+        var ctes = VisitOptionalList(node.CommonTableExpressions);
+        var top = VisitOptional(node.Top);
+        var output = VisitOptional(node.Output);
+        var from = VisitOptional(node.From);
         var target = Visit(node.Target);
         var where = VisitOptional(node.Where);
         var returning = VisitOptionalList(node.Returning);
         var returningInto = VisitOptionalList(node.ReturningInto);
         var usingSource = VisitOptional(node.Using);
 
-        return ReferenceEquals(target, node.Target)
+        return ReferenceEquals(ctes, node.CommonTableExpressions) && ReferenceEquals(top, node.Top) && ReferenceEquals(output, node.Output)
+            && ReferenceEquals(from, node.From) && ReferenceEquals(target, node.Target)
             && ReferenceEquals(where, node.Where)
             && ReferenceEquals(returning, node.Returning)
             && ReferenceEquals(returningInto, node.ReturningInto)
@@ -269,6 +339,8 @@ public abstract partial class SqlRewriter
                 : node with
                 {
                     Target = target,
+                    Top = top, Output = output, From = from,
+                    CommonTableExpressions = ctes,
                     Where = where,
                     Returning = returning,
                     ReturningInto = returningInto,
@@ -350,6 +422,35 @@ public abstract partial class SqlRewriter
             : node with { Left = left, Right = right };
     }
 
+    protected virtual SqlNode VisitQuantifiedComparison(QuantifiedComparisonExpression node)
+    {
+        var left = Visit(node.Left);
+        var query = Visit(node.Query);
+        return ReferenceEquals(left, node.Left) && ReferenceEquals(query, node.Query)
+            ? node
+            : node with { Left = left, Query = query };
+    }
+
+    protected virtual SqlNode VisitConvert(ConvertExpression node)
+    {
+        var expression = Visit(node.Expression);
+        var dataType = Visit(node.DataType);
+        var style = VisitOptional(node.Style);
+        return ReferenceEquals(expression, node.Expression) && ReferenceEquals(dataType, node.DataType)
+            && ReferenceEquals(style, node.Style)
+                ? node
+                : node with { Expression = expression, DataType = dataType, Style = style };
+    }
+
+    protected virtual SqlNode VisitJsonArrayAggregate(JsonArrayAggregateExpression node)
+    {
+        var expression = Visit(node.Expression);
+        var orderBy = VisitOptionalList(node.OrderBy);
+        return ReferenceEquals(expression, node.Expression) && ReferenceEquals(orderBy, node.OrderBy)
+            ? node
+            : node with { Expression = expression, OrderBy = orderBy };
+    }
+
     protected virtual SqlNode VisitBetween(BetweenExpression node)
     {
         var expression = Visit(node.Expression);
@@ -380,10 +481,12 @@ public abstract partial class SqlRewriter
     protected virtual SqlNode VisitFunctionCall(FunctionCallExpression node)
     {
         var name = Visit(node.Name);
+        var qualifiers = VisitOptionalList(node.Qualifiers);
         var arguments = VisitList(node.Arguments);
         var filter = VisitOptional(node.Filter);
         var withinGroup = VisitOptionalList(node.WithinGroup);
         return ReferenceEquals(name, node.Name)
+            && ReferenceEquals(qualifiers, node.Qualifiers)
             && ReferenceEquals(arguments, node.Arguments)
             && ReferenceEquals(filter, node.Filter)
             && ReferenceEquals(withinGroup, node.WithinGroup)
@@ -391,6 +494,7 @@ public abstract partial class SqlRewriter
             : node with
             {
                 Name = name,
+                Qualifiers = qualifiers,
                 Arguments = arguments,
                 Filter = filter,
                 WithinGroup = withinGroup,
@@ -473,18 +577,23 @@ public abstract partial class SqlRewriter
     {
         var name = Visit(node.Name);
         var alias = VisitOptional(node.Alias);
-        return ReferenceEquals(name, node.Name) && ReferenceEquals(alias, node.Alias)
+        var hints = VisitOptionalList(node.Hints);
+        var sample = VisitOptional(node.Sample);
+        return ReferenceEquals(name, node.Name) && ReferenceEquals(alias, node.Alias) && ReferenceEquals(hints, node.Hints)
+            && ReferenceEquals(sample, node.Sample)
             ? node
-            : node with { Name = name, Alias = alias };
+            : node with { Name = name, Alias = alias, Hints = hints, Sample = sample };
     }
 
     protected virtual SqlNode VisitDerivedTable(DerivedTable node)
     {
         var query = Visit(node.Query);
         var alias = Visit(node.Alias);
+        var columns = VisitOptionalList(node.Columns);
         return ReferenceEquals(query, node.Query) && ReferenceEquals(alias, node.Alias)
+            && ReferenceEquals(columns, node.Columns)
             ? node
-            : node with { Query = query, Alias = alias };
+            : node with { Query = query, Alias = alias, Columns = columns };
     }
 
     protected virtual SqlNode VisitJoin(JoinTable node)
@@ -505,9 +614,11 @@ public abstract partial class SqlRewriter
     {
         var expression = Visit(node.Expression);
         var alias = VisitOptional(node.Alias);
+        var target = VisitOptional(node.AssignmentTarget);
         return ReferenceEquals(expression, node.Expression) && ReferenceEquals(alias, node.Alias)
+            && ReferenceEquals(target, node.AssignmentTarget)
             ? node
-            : node with { Expression = expression, Alias = alias };
+            : node with { Expression = expression, Alias = alias, AssignmentTarget = target };
     }
 
     protected virtual SqlNode VisitOrderByItem(OrderByItem node) =>

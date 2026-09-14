@@ -4,6 +4,13 @@ namespace Cyqwel.Visitors;
 
 public abstract partial class SqlVisitor
 {
+    protected virtual void VisitBatch(SqlBatch node) => DefaultVisit(node);
+    protected virtual void VisitDeclare(DeclareStatement node) => DefaultVisit(node);
+    protected virtual void VisitTableVariableDeclaration(TableVariableDeclarationStatement node) => DefaultVisit(node);
+    protected virtual void VisitSetVariable(SetVariableStatement node) => DefaultVisit(node);
+    protected virtual void VisitPrint(PrintStatement node) => DefaultVisit(node);
+    protected virtual void VisitExecuteSql(ExecuteSqlStatement node) => DefaultVisit(node);
+    protected virtual void VisitTransaction(TransactionStatement node) => DefaultVisit(node);
     protected virtual void VisitCreateProcedure(CreateProcedureStatement node) => DefaultVisit(node);
     protected virtual void VisitReplaceProcedure(ReplaceProcedureStatement node) => DefaultVisit(node);
     protected virtual void VisitDropProcedure(DropProcedureStatement node) => DefaultVisit(node);

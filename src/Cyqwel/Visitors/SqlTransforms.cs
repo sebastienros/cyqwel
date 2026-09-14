@@ -36,10 +36,12 @@ public static class SqlTransforms
             var rewritten = (TableName)base.VisitTableName(node);
             if (tableFrom is null || tableTo is null) return rewritten;
 
-            var fullName = string.Join('.', rewritten.Parts.Select(static part => part.Value));
-            return fullName.Equals(tableFrom, StringComparison.OrdinalIgnoreCase)
-                ? new TableName(tableTo) with { Span = node.Span }
-                : rewritten;
+            var fullName = (rewritten.IsVariable ? "@" : "") +
+                string.Join('.', rewritten.Parts.Select(static part => part.Value));
+            if (!fullName.Equals(tableFrom, StringComparison.OrdinalIgnoreCase)) return rewritten;
+            return rewritten.IsVariable
+                ? Sql.TableVariable(tableTo).Name with { Span = node.Span }
+                : new TableName(tableTo) with { Span = node.Span };
         }
 
         protected override SqlNode VisitColumn(ColumnExpression node)
@@ -53,6 +55,20 @@ public static class SqlTransforms
             var parts = rewritten.Parts.ToArray();
             parts[^1] = last with { Value = columnTo };
             return rewritten with { Parts = parts };
+        }
+
+        protected override SqlNode VisitUnpivotTable(UnpivotTable node)
+        {
+            var rewritten = (UnpivotTable)base.VisitUnpivotTable(node);
+            if (columnFrom is null || columnTo is null) return rewritten;
+            SqlIdentifier[]? columns = null;
+            for (var i = 0; i < rewritten.Columns.Count; i++)
+            {
+                if (!rewritten.Columns[i].Value.Equals(columnFrom, StringComparison.OrdinalIgnoreCase)) continue;
+                columns ??= rewritten.Columns.ToArray();
+                columns[i] = columns[i] with { Value = columnTo };
+            }
+            return columns is null ? rewritten : rewritten with { Columns = columns };
         }
     }
 }

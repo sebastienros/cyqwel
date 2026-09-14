@@ -6,10 +6,32 @@ internal static partial class SqlNodeChildren
 {
     public static IEnumerable<SqlNode> Get(SqlNode node)
     {
+        foreach (var child in GetCore(node)) yield return child;
+        if (node is SqlQuery { ResultFormat: { } format }) yield return format;
+        if (node is SqlStatement { QueryOptions: { } options })
+            foreach (var option in options) yield return option;
+    }
+
+    private static IEnumerable<SqlNode> GetCore(SqlNode node)
+    {
         switch (node)
         {
             case SqlDocument value:
+                return value.Batches is not null ? value.Batches : value.Statements;
+            case SqlBatch value:
                 return value.Statements;
+            case DeclareStatement value:
+                return value.Variables;
+            case TableVariableDeclarationStatement value:
+                return [value.Name, .. value.Elements];
+            case SetVariableStatement value:
+                return [value.Name, value.Value];
+            case PrintStatement value:
+                return [value.Value];
+            case ExecuteSqlStatement value:
+                return [value.Command];
+            case TransactionStatement value:
+                return new SqlNode?[] { value.Name, value.Mark }.OfType<SqlNode>();
             case SelectStatement value:
                 return SelectChildren(value);
             case ValuesStatement value:
@@ -20,6 +42,20 @@ internal static partial class SqlNodeChildren
                 return [value.Query];
             case InsertStatement value:
                 return InsertChildren(value);
+            case TSqlOutputClause value:
+                return OutputChildren(value);
+            case MergeActionExpression:
+                return [];
+            case CreateInlineFunctionStatement value:
+                return [value.Name, .. value.Parameters, value.Query];
+            case CreateSchemaStatement value:
+                return [value.Name];
+            case ComputedColumnDefinition value:
+                return [value.Name, value.Expression];
+            case DefaultConstraint value:
+                return value.Name is null ? [value.Value, value.Column] : [value.Name, value.Value, value.Column];
+            case AddTableElementAction value:
+                return [value.Element];
             case UpdateStatement value:
                 return UpdateChildren(value);
             case DeleteStatement value:
@@ -55,15 +91,17 @@ internal static partial class SqlNodeChildren
                     ? [value.Name]
                     : [value.Name, .. value.ParameterTypes];
             case CallProcedureStatement value:
-                return [value.Name, .. value.Arguments];
+                return value.ReturnVariable is null ? [value.Name, .. value.Arguments]
+                    : [value.ReturnVariable, value.Name, .. value.Arguments];
             case ProceduralIfStatement value:
                 return ProceduralIfChildren(value);
             case ProceduralWhileStatement value:
                 return [value.Condition, .. value.Statements];
             case ProceduralBreakStatement:
             case ProceduralContinueStatement:
-            case ProceduralReturnStatement:
                 return [];
+            case ProceduralReturnStatement value:
+                return value.Value is null ? [] : [value.Value];
             case ProcedureParameter value:
                 return value.Default is null
                     ? [value.Name, value.DataType]
@@ -88,6 +126,14 @@ internal static partial class SqlNodeChildren
                 return [value.Operand];
             case BinaryExpression value:
                 return [value.Left, value.Right];
+            case ConvertExpression value:
+                return value.Style is null
+                    ? [value.DataType, value.Expression]
+                    : [value.DataType, value.Expression, value.Style];
+            case JsonArrayAggregateExpression value:
+                return value.OrderBy is null ? [value.Expression] : [value.Expression, .. value.OrderBy];
+            case QuantifiedComparisonExpression value:
+                return [value.Left, value.Query];
             case BetweenExpression value:
                 return [value.Expression, value.Lower, value.Upper];
             case InExpression value:
@@ -131,13 +177,37 @@ internal static partial class SqlNodeChildren
             case TableName value:
                 return value.Parts;
             case NamedTable value:
-                return value.Alias is null ? [value.Name] : [value.Name, value.Alias];
+                return [value.Name, .. Optional(value.Alias), .. Optional(value.Sample), .. value.Hints ?? []];
+            case TSqlTableSample value:
+                return [value.Amount];
+            case TSqlTableHint value:
+                return value.Indexes ?? [];
+            case TSqlIndexReference value:
+                return Optional(value.Name);
             case DerivedTable value:
-                return [value.Query, value.Alias];
+                return [value.Query, value.Alias, .. value.Columns ?? []];
+            case TableFunction value:
+                return [value.Function, .. Optional(value.Alias), .. value.Columns ?? []];
+            case ParenthesizedTable value:
+                return [value.Source, .. Optional(value.Alias)];
+            case DerivedMutationTable value:
+                return [value.Statement, value.Alias, .. value.Columns ?? []];
+            case OpenJsonTable value:
+                return [value.Expression, .. Optional(value.Path), .. value.Schema ?? [], .. Optional(value.Alias)];
+            case OpenJsonColumn value:
+                return [value.Name, value.DataType, .. Optional(value.Path)];
+            case PivotTable value:
+                return [value.Source, value.Aggregate, value.Column, .. value.Values, .. Optional(value.Alias)];
+            case UnpivotTable value:
+                return [value.Source, value.ValueColumn, value.NameColumn, .. value.Columns, .. Optional(value.Alias)];
+            case TSqlResultFormat value:
+                return [.. Optional(value.ElementName), .. Optional(value.Root)];
+            case TSqlQueryOption:
+                return [];
             case JoinTable value:
                 return JoinChildren(value);
             case SelectItem value:
-                return value.Alias is null ? [value.Expression] : [value.Expression, value.Alias];
+                return SelectItemChildren(value);
             case OrderByItem value:
                 return [value.Expression];
             case CommonTableExpression value:
@@ -224,6 +294,7 @@ internal static partial class SqlNodeChildren
 
         if (node.Top is not null) yield return node.Top;
         foreach (var projection in node.Projections) yield return projection;
+        if (node.Into is not null) yield return node.Into;
         if (node.From is not null) yield return node.From;
         if (node.Where is not null) yield return node.Where;
 
@@ -251,6 +322,9 @@ internal static partial class SqlNodeChildren
         if (node.Offset is not null) yield return node.Offset;
     }
 
+    private static IEnumerable<SqlNode> Optional(SqlNode? node) =>
+        node is null ? [] : [node];
+
     private static IEnumerable<SqlNode> SetOperationChildren(SetOperationStatement node)
     {
         yield return node.Left;
@@ -272,6 +346,10 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> InsertChildren(InsertStatement node)
     {
+        if (node.CommonTableExpressions is not null)
+            foreach (var cte in node.CommonTableExpressions) yield return cte;
+        if (node.Top is not null) yield return node.Top;
+        if (node.Output is not null) yield return node.Output;
         yield return node.Target;
 
         if (node.Columns is not null)
@@ -302,6 +380,10 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> UpdateChildren(UpdateStatement node)
     {
+        if (node.CommonTableExpressions is not null)
+            foreach (var cte in node.CommonTableExpressions) yield return cte;
+        if (node.Top is not null) yield return node.Top;
+        if (node.Output is not null) yield return node.Output;
         yield return node.Target;
         foreach (var assignment in node.Assignments) yield return assignment;
         if (node.From is not null) yield return node.From;
@@ -320,6 +402,11 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> DeleteChildren(DeleteStatement node)
     {
+        if (node.CommonTableExpressions is not null)
+            foreach (var cte in node.CommonTableExpressions) yield return cte;
+        if (node.Top is not null) yield return node.Top;
+        if (node.Output is not null) yield return node.Output;
+        if (node.From is not null) yield return node.From;
         yield return node.Target;
         if (node.Using is not null) yield return node.Using;
         if (node.Where is not null) yield return node.Where;
@@ -344,6 +431,10 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> FunctionChildren(FunctionCallExpression node)
     {
+        if (node.Qualifiers is not null)
+        {
+            foreach (var qualifier in node.Qualifiers) yield return qualifier;
+        }
         yield return node.Name;
         foreach (var argument in node.Arguments) yield return argument;
         if (node.Filter is not null) yield return node.Filter;
@@ -351,6 +442,13 @@ internal static partial class SqlNodeChildren
         {
             foreach (var item in node.WithinGroup) yield return item;
         }
+    }
+
+    private static IEnumerable<SqlNode> SelectItemChildren(SelectItem node)
+    {
+        if (node.AssignmentTarget is not null) yield return node.AssignmentTarget;
+        yield return node.Expression;
+        if (node.Alias is not null) yield return node.Alias;
     }
 
     private static IEnumerable<SqlNode> WindowChildren(WindowExpression node)

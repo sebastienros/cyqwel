@@ -27,6 +27,10 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> MergeChildren(MergeStatement node)
     {
+        if (node.CommonTableExpressions is not null)
+            foreach (var cte in node.CommonTableExpressions) yield return cte;
+        if (node.Top is not null) yield return node.Top;
+        if (node.Output is not null) yield return node.Output;
         yield return node.Target;
         yield return node.Source;
         yield return node.Condition;
@@ -87,10 +91,25 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> ColumnDefinitionChildren(ColumnDefinition node)
     {
+        if (node.Collation is not null) yield return node.Collation;
+        if (node.Constraints is not null)
+            foreach (var constraint in node.Constraints) yield return constraint;
+        if (node.IdentitySeed is not null) yield return node.IdentitySeed;
+        if (node.IdentityIncrement is not null) yield return node.IdentityIncrement;
+        if (node.DefaultConstraintName is not null) yield return node.DefaultConstraintName;
+        if (node.KeyConstraintName is not null) yield return node.KeyConstraintName;
         yield return node.Name;
         yield return node.DataType;
         if (node.Default is not null) yield return node.Default;
         if (node.GeneratedExpression is not null) yield return node.GeneratedExpression;
+    }
+
+    private static IEnumerable<SqlNode> OutputChildren(TSqlOutputClause node)
+    {
+        foreach (var item in node.Items) yield return item;
+        if (node.Into is not null) yield return node.Into;
+        if (node.Columns is not null)
+            foreach (var column in node.Columns) yield return column;
     }
 
     private static IEnumerable<SqlNode> IndexTableElementChildren(IndexTableElement node)
@@ -117,6 +136,7 @@ internal static partial class SqlNodeChildren
 
     private static IEnumerable<SqlNode> AlterColumnChildren(AlterColumnAction node)
     {
+        if (node.Collation is not null) yield return node.Collation;
         yield return node.Column;
         if (node.DataType is not null) yield return node.DataType;
         if (node.Default is not null) yield return node.Default;

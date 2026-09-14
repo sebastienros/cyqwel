@@ -1,0 +1,31 @@
+{
+  "sources": [
+    {
+      "source": "sqlglot",
+      "repository": "tobymao/sqlglot",
+      "revision": "5cfb5997a99010940138670adf3d6b34ac5a0a08",
+      "license": "MIT",
+      "licensePath": "LICENSE",
+      "expectedCandidates": 720,
+      "expectedExclusions": 648,
+      "include": [
+        "tests/dialects",
+        "LICENSE"
+      ]
+    },
+    {
+      "source": "scriptdom",
+      "repository": "microsoft/SqlScriptDOM",
+      "revision": "c122a7f9e69e9e98b0abbe7b69693ce23aaca829",
+      "license": "MIT",
+      "licensePath": "LICENSE",
+      "expectedCandidates": 583,
+      "expectedExclusions": 503,
+      "include": [
+        "Test/SqlDom",
+        "LICENSE",
+        "NOTICE.txt"
+      ]
+    }
+  ]
+}

@@ -22,6 +22,13 @@ public enum IdentityGeneration
     ByDefault,
 }
 
+public enum IndexClustering
+{
+    Unspecified,
+    Clustered,
+    Nonclustered,
+}
+
 public sealed record ColumnDefinition(
     SqlIdentifier Name,
     SqlDataType DataType,
@@ -31,18 +38,42 @@ public sealed record ColumnDefinition(
     GeneratedColumnKind GeneratedKind = GeneratedColumnKind.Virtual,
     IdentityGeneration Identity = IdentityGeneration.None,
     bool IsPrimaryKey = false,
-    bool IsUnique = false) : TableElement;
+    bool IsUnique = false) : TableElement
+{
+    public SqlExpression? IdentitySeed { get; init; }
+    public SqlExpression? IdentityIncrement { get; init; }
+    public SqlIdentifier? DefaultConstraintName { get; init; }
+    public SqlIdentifier? Collation { get; init; }
+    public SqlIdentifier? KeyConstraintName { get; init; }
+    public IndexClustering Clustering { get; init; }
+    public IReadOnlyList<TableConstraint>? Constraints { get; init; }
+}
 
 public abstract record TableConstraint : TableElement
 {
     public SqlIdentifier? Name { get; init; }
+    public IndexClustering Clustering { get; init; }
+    public IReadOnlyList<OrderDirection>? ColumnDirections { get; init; }
 }
+
+public sealed record ComputedColumnDefinition(
+    SqlIdentifier Name,
+    SqlExpression Expression,
+    bool IsPersisted = false,
+    Nullability Nullability = Nullability.Unspecified) : TableElement;
+
+public sealed record DefaultConstraint(
+    SqlExpression Value,
+    SqlIdentifier Column) : TableConstraint;
 
 public sealed record IndexTableElement(
     SqlIdentifier? Name,
     IReadOnlyList<IndexColumn> Columns,
     bool IsUnique = false,
-    bool IsKey = false) : TableElement;
+    bool IsKey = false) : TableElement
+{
+    public IndexClustering Clustering { get; init; }
+}
 
 public sealed record PrimaryKeyConstraint(
     IReadOnlyList<SqlIdentifier> Columns) : TableConstraint
@@ -119,6 +150,8 @@ public abstract record AlterTableAction : SqlNode;
 
 public sealed record AddColumnAction(ColumnDefinition Column) : AlterTableAction;
 
+public sealed record AddTableElementAction(TableElement Element) : AlterTableAction;
+
 public sealed record DropColumnAction(
     SqlIdentifier Column,
     bool IfExists = false,
@@ -129,7 +162,10 @@ public sealed record AlterColumnAction(
     SqlDataType? DataType = null,
     Nullability Nullability = Nullability.Unspecified,
     SqlExpression? Default = null,
-    bool DropDefault = false) : AlterTableAction;
+    bool DropDefault = false) : AlterTableAction
+{
+    public SqlIdentifier? Collation { get; init; }
+}
 
 public sealed record AddConstraintAction(TableConstraint Constraint) : AlterTableAction;
 
@@ -146,7 +182,10 @@ public sealed record RenameTableAction(SqlIdentifier NewName) : AlterTableAction
 
 public sealed record AlterTableStatement(
     TableName Name,
-    IReadOnlyList<AlterTableAction> Actions) : SqlStatement;
+    IReadOnlyList<AlterTableAction> Actions) : SqlStatement
+{
+    public bool? WithCheck { get; init; }
+}
 
 public enum SchemaObjectKind
 {
@@ -180,7 +219,18 @@ public sealed record CreateViewStatement(
     IReadOnlyList<SqlIdentifier>? Columns = null,
     bool OrReplace = false,
     bool IsTemporary = false,
-    ViewSecurity? Security = null) : SqlStatement;
+    ViewSecurity? Security = null) : SqlStatement
+{
+    public bool IsAlter { get; init; }
+    public bool OrAlter { get; init; }
+}
+
+public sealed record CreateInlineFunctionStatement(
+    TableName Name,
+    IReadOnlyList<ProcedureParameter> Parameters,
+    SqlQuery Query) : SqlStatement;
+
+public sealed record CreateSchemaStatement(SqlIdentifier Name) : SqlStatement;
 
 public sealed record IndexColumn(
     SqlExpression Expression,
@@ -193,7 +243,10 @@ public sealed record CreateIndexStatement(
     IReadOnlyList<IndexColumn> Columns,
     bool IsUnique = false,
     bool IfNotExists = false,
-    SqlExpression? Where = null) : SqlStatement;
+    SqlExpression? Where = null) : SqlStatement
+{
+    public IndexClustering Clustering { get; init; }
+}
 
 public sealed record SequenceOptions(
     SqlExpression? StartWith = null,

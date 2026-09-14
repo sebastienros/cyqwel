@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cyqwel\Cyqwel.csproj" />
+    <ProjectReference Include="..\..\tools\Cyqwel.TSqlCompatibility\Cyqwel.TSqlCompatibility.csproj" />
   </ItemGroup>
 
 </Project>

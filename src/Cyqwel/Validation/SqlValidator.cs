@@ -209,6 +209,12 @@ public static class SqlValidator
         SqlDialect dialect,
         List<SqlValidationDiagnostic> diagnostics)
     {
+        foreach (var transaction in document.FindAll<TransactionStatement>())
+        {
+            if (!transaction.HasValidModifiers)
+                diagnostics.Add(Error(SqlValidationCodes.InvalidProceduralContext,
+                    "Invalid transaction modifiers.", sql, transaction));
+        }
         foreach (var statement in document.Statements)
         {
             if (!dialect.SupportsTopLevelProceduralControlFlow
@@ -249,7 +255,8 @@ public static class SqlValidator
                         parameter));
                 }
 
-                if (parameter.Mode == ProcedureParameterMode.Out && parameter.Default is not null)
+                if (!dialect.ParserOptions.SupportsTSqlExtensions
+                    && parameter.Mode == ProcedureParameterMode.Out && parameter.Default is not null)
                 {
                     diagnostics.Add(Error(
                         SqlValidationCodes.InvalidProcedureDefault,
@@ -259,7 +266,8 @@ public static class SqlValidator
                 }
 
                 if (parameter.Default is not null) defaultSeen = true;
-                else if (defaultSeen && parameter.Mode != ProcedureParameterMode.Out)
+                else if (!dialect.ParserOptions.SupportsTSqlExtensions
+                    && defaultSeen && parameter.Mode != ProcedureParameterMode.Out)
                 {
                     diagnostics.Add(Error(
                         SqlValidationCodes.InvalidProcedureDefault,
@@ -272,7 +280,8 @@ public static class SqlValidator
             AddProceduralBlockDiagnostics(body, symbols, sql, diagnostics);
         }
 
-        foreach (var block in document.Statements.OfType<ProceduralBlock>())
+        foreach (var block in dialect.ParserOptions.SupportsTSqlExtensions
+            ? Array.Empty<ProceduralBlock>() : document.Statements.OfType<ProceduralBlock>())
         {
             AddProceduralBlockDiagnostics(
                 block,
@@ -281,7 +290,25 @@ public static class SqlValidator
                 diagnostics);
         }
 
-        if (dialect.SupportsTopLevelProceduralControlFlow)
+        if (dialect.ParserOptions.SupportsTSqlExtensions)
+        {
+            var scriptNodes = document.Statements
+                .Where(static statement => statement is not (CreateProcedureStatement or ReplaceProcedureStatement))
+                .SelectMany(static statement => statement.DescendantsAndSelf()).ToArray();
+            var declaredNames = scriptNodes.OfType<LocalVariable>()
+                .Select(static variable => variable.Name.Value)
+                .Concat(scriptNodes.OfType<TableVariableDeclarationStatement>().Select(static declaration => declaration.Name.Value))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var batch in document.Batches ?? [new SqlBatch(document.Statements)])
+            {
+                AddProceduralBlockDiagnostics(
+                    new ProceduralBlock([], batch.Statements.Where(statement =>
+                        statement is not (CreateProcedureStatement or ReplaceProcedureStatement)).ToArray()),
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase), sql, diagnostics, declaredNames);
+            }
+        }
+
+        if (dialect.SupportsTopLevelProceduralControlFlow && !dialect.ParserOptions.SupportsTSqlExtensions)
         {
             AddProceduralLoopDiagnostics(
                 document.Statements.Where(static statement => statement is not ProceduralBlock).ToArray(),
@@ -326,8 +353,14 @@ public static class SqlValidator
         ProceduralBlock block,
         HashSet<string> symbols,
         string sql,
-        List<SqlValidationDiagnostic> diagnostics)
+        List<SqlValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? knownDeclaredNames = null)
     {
+        var declaredNames = block.FindAll<LocalVariable>().Select(static variable => variable.Name.Value)
+            .Concat(block.FindAll<TableVariableDeclarationStatement>().Select(static declaration => declaration.Name.Value))
+            .Concat(symbols)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (knownDeclaredNames is not null) declaredNames.UnionWith(knownDeclaredNames);
         foreach (var variable in block.Variables)
         {
             if (!symbols.Add(variable.Name.Value))
@@ -340,19 +373,89 @@ public static class SqlValidator
             }
         }
 
-        foreach (var variable in block.FindAll<LocalVariableExpression>())
+        foreach (var variable in block.Variables)
+            if (variable.Initializer is not null) ValidateReferences(variable.Initializer);
+        ValidateStatements(block.Statements);
+        AddProceduralLoopDiagnostics(block.Statements, 0, sql, diagnostics);
+
+        void ValidateReferences(SqlNode node)
         {
-            if (!symbols.Contains(variable.Name.Value))
+            foreach (var variable in node.FindAll<LocalVariableExpression>())
             {
-                diagnostics.Add(Error(
-                    SqlValidationCodes.UnknownLocalVariable,
-                    $"Local variable '{variable.Name.Value}' is not declared.",
-                    sql,
-                    variable));
+                CheckSymbol(variable.Name, variable);
+            }
+            foreach (var item in node.FindAll<SelectItem>())
+            {
+                if (item.AssignmentTarget is not null) CheckAssignmentTarget(item.AssignmentTarget, item);
             }
         }
 
-        AddProceduralLoopDiagnostics(block.Statements, 0, sql, diagnostics);
+        void CheckSymbol(SqlIdentifier name, SqlNode node)
+        {
+            if (symbols.Contains(name.Value)) return;
+            diagnostics.Add(Error(SqlValidationCodes.UnknownLocalVariable,
+                $"Local variable '{name.Value}' is not declared.", sql, node));
+        }
+
+        void CheckAssignmentTarget(SqlIdentifier name, SqlNode node)
+        {
+            if (declaredNames.Contains(name.Value)) CheckSymbol(name, node);
+        }
+
+        void Declare(SqlIdentifier name, SqlNode node)
+        {
+            if (symbols.Add(name.Value)) return;
+            diagnostics.Add(Error(SqlValidationCodes.DuplicateProceduralSymbol,
+                $"Local symbol '{name.Value}' is declared more than once.", sql, node));
+        }
+
+        void ValidateStatements(IReadOnlyList<SqlStatement> statements)
+        {
+            foreach (var statement in statements)
+            {
+                switch (statement)
+                {
+                    case DeclareStatement declaration:
+                        foreach (var variable in declaration.Variables)
+                        {
+                            Declare(variable.Name, variable);
+                            if (variable.Initializer is not null) ValidateReferences(variable.Initializer);
+                        }
+                        break;
+                    case TableVariableDeclarationStatement declaration:
+                        Declare(declaration.Name, declaration);
+                        break;
+                    case SetVariableStatement assignment:
+                        CheckAssignmentTarget(assignment.Name, assignment);
+                        ValidateReferences(assignment.Value);
+                        break;
+                    case CallProcedureStatement { ReturnVariable: not null } call:
+                        CheckAssignmentTarget(call.ReturnVariable, call);
+                        ValidateReferences(call);
+                        break;
+                    case ProceduralIfStatement conditional:
+                        ValidateReferences(conditional.Condition);
+                        ValidateStatements(conditional.Then);
+                        if (conditional.Else is not null) ValidateStatements(conditional.Else);
+                        break;
+                    case ProceduralWhileStatement loop:
+                        ValidateReferences(loop.Condition);
+                        ValidateStatements(loop.Statements);
+                        break;
+                    case ProceduralBlock nested:
+                        foreach (var variable in nested.Variables)
+                        {
+                            Declare(variable.Name, variable);
+                            if (variable.Initializer is not null) ValidateReferences(variable.Initializer);
+                        }
+                        ValidateStatements(nested.Statements);
+                        break;
+                    default:
+                        ValidateReferences(statement);
+                        break;
+                }
+            }
+        }
     }
 
     private static void AddProceduralLoopDiagnostics(
@@ -392,13 +495,18 @@ public static class SqlValidator
 
     private static bool ContainsAggregate(SqlExpression expression) => expression switch
     {
+        JsonArrayAggregateExpression => true,
         WindowExpression => false,
         SubqueryExpression or ExistsExpression => false,
-        FunctionCallExpression function when IsAggregateFunction(function.Name.Value) => true,
+        FunctionCallExpression function when function.Qualifiers is not { Count: > 0 }
+            && IsAggregateFunction(function.Name.Value) => true,
         FunctionCallExpression function => function.Arguments.Any(ContainsAggregate),
         ParenthesizedExpression value => ContainsAggregate(value.Expression),
         UnaryExpression value => ContainsAggregate(value.Operand),
         BinaryExpression value => ContainsAggregate(value.Left) || ContainsAggregate(value.Right),
+        QuantifiedComparisonExpression value => ContainsAggregate(value.Left),
+        ConvertExpression value => ContainsAggregate(value.Expression)
+            || value.Style is not null && ContainsAggregate(value.Style),
         BetweenExpression value => ContainsAggregate(value.Expression)
             || ContainsAggregate(value.Lower)
             || ContainsAggregate(value.Upper),
@@ -424,13 +532,17 @@ public static class SqlValidator
     private static bool ContainsUngroupedColumn(SqlExpression expression) => expression switch
     {
         ColumnExpression => true,
-        WindowExpression or SubqueryExpression or ExistsExpression => false,
-        FunctionCallExpression function when IsAggregateFunction(function.Name.Value) => false,
+        WindowExpression or SubqueryExpression or ExistsExpression or JsonArrayAggregateExpression => false,
+        FunctionCallExpression function when function.Qualifiers is not { Count: > 0 }
+            && IsAggregateFunction(function.Name.Value) => false,
         FunctionCallExpression function => function.Arguments.Any(ContainsUngroupedColumn),
         ParenthesizedExpression value => ContainsUngroupedColumn(value.Expression),
         UnaryExpression value => ContainsUngroupedColumn(value.Operand),
         BinaryExpression value => ContainsUngroupedColumn(value.Left)
             || ContainsUngroupedColumn(value.Right),
+        QuantifiedComparisonExpression value => ContainsUngroupedColumn(value.Left),
+        ConvertExpression value => ContainsUngroupedColumn(value.Expression)
+            || value.Style is not null && ContainsUngroupedColumn(value.Style),
         BetweenExpression value => ContainsUngroupedColumn(value.Expression)
             || ContainsUngroupedColumn(value.Lower)
             || ContainsUngroupedColumn(value.Upper),

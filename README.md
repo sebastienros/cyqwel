@@ -13,6 +13,12 @@ Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutabl
 - Build queries and data modification statements with a fluent API
 - Define and register custom SQL dialects
 
+T-SQL compatibility is tracked by a frozen SQLGlot Core profile, with
+ScriptDom-backed grammar and structural checks. It targets ordinary
+application SQL, not exhaustive SQL Server administration or advanced modes.
+See the [compatibility campaign](tools/tsql_compat/README.md) for scope,
+provenance, fixture gates, and the unfiltered baseline.
+
 ## Install
 
 ```bash
@@ -63,6 +69,67 @@ a literal-only interval grammar, generation removes the national prefix and
 redundant parentheses from interval literals without changing the original AST.
 Nonliteral interval expressions throw for such targets unless unsupported SQL is
 explicitly allowed.
+
+### T-SQL names and expressions
+
+T-SQL preserves temporary names (`#work`, `##work`), table variables (`@rows`),
+system variables (`@@ROWCOUNT`), omitted multipart components (`db..objects`),
+and qualified user-defined function names. Table variables remain distinct
+from physical tables during traversal and renaming.
+
+`SELECT label = expression` produces a projection alias, while
+`SELECT @total += amount` records a variable assignment with an explicit
+target and operator. `CONVERT`/`TRY_CONVERT`, including optional styles, and
+`VARCHAR`/`NVARCHAR`/`VARBINARY(MAX)` use typed nodes rather than treating type
+arguments as column references. `ANY`, `ALL`, and `SOME` comparisons retain
+their subqueries and participate in correlated-column validation.
+Native T-SQL `||` is preserved as `BinaryOperator.AnsiConcatenate`
+(`Sql.AnsiConcat`), distinct from dialect-normalized concatenation or `+`.
+`JSON_ARRAYAGG` retains its internal ordering and `NULL ON NULL` /
+`ABSENT ON NULL` behavior in `JsonArrayAggregateExpression` (`Sql.JsonArrayAgg`).
+
+Builders expose the same distinctions through `Sql.TableVariable`,
+`Sql.SystemVariable`, `Sql.SelectAssign`, `Sql.MaxLengthType`,
+`Sql.Convert`, and `Sql.QuantifiedComparison`. Native constructs that cannot
+be represented by another dialect fail generation by default.
+
+### T-SQL query extensions
+
+The T-SQL dialect supports derived-table column aliases, structured table-valued
+function sources, `CROSS APPLY`/`OUTER APPLY`, and `OPENJSON` with paths and typed
+`WITH` schemas (including `AS JSON`). `SELECT INTO`, basic `PIVOT`/`UNPIVOT`,
+ordinary table hints, and local `HASH`/`LOOP`/`MERGE` join hints are represented
+in the syntax tree rather than retained as SQL text.
+`INDEX(name[, ...])` and `INDEX = name` table hints support named indexes and
+numeric index IDs. `NamedTable.Hints` retains hint and index-list order through
+typed `TSqlTableHint` and `TSqlIndexReference` nodes; index names are not treated
+as table-column references.
+Basic `TABLESAMPLE` supports row counts or percentages, optional `SYSTEM`, and
+typed `NamedTable.Sample` metadata. Repeatable sampling remains outside this
+bounded surface.
+An `INSERT ... SELECT` can consume a nested `MERGE ... OUTPUT` through
+`DerivedMutationTable`, preserving its output-column aliases and statement body.
+Table-valued function names retain their identifier casing and quoting regardless
+of `FunctionNameCase`; scalar functions in their arguments still follow that option.
+
+Query tails support `FOR JSON AUTO/PATH` with `ROOT`, `INCLUDE_NULL_VALUES`,
+and `WITHOUT_ARRAY_WRAPPER`, and `FOR XML AUTO/PATH/RAW` with `TYPE` and `ROOT`.
+Bounded `OPTION` support includes `RECOMPILE`, `MAXDOP`, `MAXRECURSION`,
+`OPTIMIZE FOR UNKNOWN`, `FORCE ORDER`, and `FAST`. Advanced XML modes, remote
+join hints, and unlisted optimizer options are not accepted.
+
+Use `SelectStatement.Into`, `SqlQuery.ResultFormat`, and
+`SqlStatement.QueryOptions` to inspect these clauses. Sources use
+`TableFunction`, `OpenJsonTable`, `PivotTable`, and `UnpivotTable`; their schema,
+alias, and expression children participate in visitors and rewriters.
+`SelectBuilder` provides `Into`, `CrossApply`, `OuterApply`, `ResultFormat`,
+and `QueryOptions`; set-query builders also expose the two query-tail methods.
+T-SQL extensions are enabled by `SupportsTSqlExtensions` (inherited by custom
+T-SQL dialects, not enabled by Generic SQL). Generation to an unsupported
+target throws by default instead of discarding the clauses.
+Standard derived-table column alias lists use the separate
+`SupportsDerivedTableColumnAliases` capability; Generic SQL, PostgreSQL, and
+MySQL also support them, while SQLite and Oracle reject their generation.
 
 ## Inspect and transform SQL
 
@@ -224,6 +291,20 @@ The fluent API supports recursive and materialized CTEs, `UNION` / `INTERSECT` /
 advanced joins, `EXPLAIN`, `MERGE`, `UPDATE FROM`, `DELETE USING`,
 `RETURNING INTO`, and all supported DDL statements.
 
+T-SQL mutations additionally model `TOP`, joined `UPDATE`/`DELETE`, `DEFAULT VALUES`,
+and a typed `TSqlOutputClause`. Its `Into` property is a destination table (including
+table variables), not `ReturningInto` bind variables. Mutation builders expose
+`With` for CTE prefixes, `Top`, `Output`, and bounded `Option` methods. Unsupported target dialects reject
+these native semantics rather than silently dropping them.
+
+Application DDL preserves identity seed/increment, named defaults and keys, rowstore
+clustering and key directions, native `ALTER COLUMN`, `ALTER VIEW`/`CREATE OR ALTER VIEW`,
+and structural inline table-valued function bodies. Plain T-SQL `CREATE SCHEMA name`
+is modeled by `CreateSchemaStatement` and built with `Sql.CreateSchema(name)`;
+authorization clauses and embedded schema elements are not supported. T-SQL identity generation uses
+`IDENTITY`; SQL-standard `GENERATED ALWAYS` remains distinct and is not silently
+converted to T-SQL's different identity semantics.
+
 Builder helpers only expose forms that can be parsed by at least one built-in
 dialect, so generated builder SQL can round-trip through the syntax tree.
 
@@ -321,6 +402,24 @@ parameters, defaults, local variables, `IF` / `ELSE`, `WHILE`, `BREAK`,
 labels required by MySQL and generic SQL automatically. `FOR` loops, cursors,
 handlers, and arbitrary procedural bodies are outside this subset.
 
+T-SQL scripts also support scalar and table `DECLARE`, compound `SET @variable`
+assignments, `SET NOCOUNT` / `SET XACT_ABORT`, `PRINT`, procedure calls and
+return-status capture, return values,
+and ordinary `BEGIN TRANSACTION`, `COMMIT`, and `ROLLBACK` (including named
+transactions, `WITH MARK`, and the nullable `DelayedDurability` ON/OFF option
+on `COMMIT`). Semicolons are optional. Plain line-delimited
+`GO` is represented by `SqlDocument.Batches`; `SqlDocument.Statements` remains
+the flattened statement view. A procedure's `AS` statement list ends at its
+batch boundary, and SQL text passed to `EXEC` or `EXEC(...)` remains argument
+data without being parsed as a routine body. GO counts,
+SQLCMD, distributed transactions, and other transaction options are not supported.
+Declarations within a T-SQL body remain `DeclareStatement` or
+`TableVariableDeclarationStatement` entries in source order. Builder
+`Variable` calls after a statement likewise stay at that position; generating
+such declarations for an unsupported dialect fails explicitly.
+Schema validation infers computed table-variable column types, excludes these
+columns from implicit insert targets, and rejects assignments to them.
+
 Reusable procedural nodes use the `Procedural*` prefix (`ProceduralBlock`,
 `ProceduralIfStatement`, `ProceduralWhileStatement`, and the loop-control nodes),
 while declarations use `LocalVariable` and references use
@@ -378,6 +477,14 @@ into the Generic SQL structured subset.
 ## Supported dialects
 
 Cyqwel includes Generic SQL, T-SQL, SQLite, PostgreSQL, MySQL, and Oracle dialects. The shared syntax tree covers common relational queries, data modification, and schema statements while dialects handle source compatibility and target-specific SQL generation.
+
+### T-SQL compatibility campaign
+
+The [T-SQL campaign](tools/tsql_compat/README.md) checks original SQLGlot and
+Microsoft ScriptDom parser fixtures against Cyqwel, with pinned sources,
+reference validation, explicit exclusions, and reproducible gap reports.
+It distinguishes whole-script parsing, statement parsing, generation failures,
+and targeted AST mismatches rather than measuring only a supported subset.
 
 ## Inspiration
 

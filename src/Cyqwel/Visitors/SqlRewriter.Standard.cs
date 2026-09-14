@@ -29,13 +29,17 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitMerge(MergeStatement node)
     {
+        var ctes = VisitOptionalList(node.CommonTableExpressions);
+        var top = VisitOptional(node.Top);
+        var output = VisitOptional(node.Output);
         var target = Visit(node.Target);
         var source = Visit(node.Source);
         var condition = Visit(node.Condition);
         var whenClauses = VisitList(node.WhenClauses);
         var returning = VisitOptionalList(node.Returning);
         var returningInto = VisitOptionalList(node.ReturningInto);
-        return ReferenceEquals(target, node.Target)
+        return ReferenceEquals(ctes, node.CommonTableExpressions) && ReferenceEquals(top, node.Top) && ReferenceEquals(output, node.Output)
+            && ReferenceEquals(target, node.Target)
             && ReferenceEquals(source, node.Source)
             && ReferenceEquals(condition, node.Condition)
             && ReferenceEquals(whenClauses, node.WhenClauses)
@@ -45,6 +49,8 @@ public abstract partial class SqlRewriter
                 : node with
                 {
                     Target = target,
+                    Top = top, Output = output,
+                    CommonTableExpressions = ctes,
                     Source = source,
                     Condition = condition,
                     WhenClauses = whenClauses,
@@ -258,11 +264,20 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitColumnDefinition(ColumnDefinition node)
     {
+        var collation = VisitOptional(node.Collation);
+        var constraints = VisitOptionalList(node.Constraints);
+        var seed = VisitOptional(node.IdentitySeed);
+        var increment = VisitOptional(node.IdentityIncrement);
+        var defaultName = VisitOptional(node.DefaultConstraintName);
+        var keyName = VisitOptional(node.KeyConstraintName);
         var name = Visit(node.Name);
         var dataType = Visit(node.DataType);
         var defaultValue = VisitOptional(node.Default);
         var generated = VisitOptional(node.GeneratedExpression);
-        return ReferenceEquals(name, node.Name)
+        return ReferenceEquals(collation, node.Collation) && ReferenceEquals(constraints, node.Constraints)
+            && ReferenceEquals(seed, node.IdentitySeed) && ReferenceEquals(increment, node.IdentityIncrement)
+            && ReferenceEquals(defaultName, node.DefaultConstraintName) && ReferenceEquals(keyName, node.KeyConstraintName)
+            && ReferenceEquals(name, node.Name)
             && ReferenceEquals(dataType, node.DataType)
             && ReferenceEquals(defaultValue, node.Default)
             && ReferenceEquals(generated, node.GeneratedExpression)
@@ -270,6 +285,10 @@ public abstract partial class SqlRewriter
                 : node with
                 {
                     Name = name,
+                    Constraints = constraints,
+                    Collation = collation,
+                    IdentitySeed = seed, IdentityIncrement = increment,
+                    DefaultConstraintName = defaultName, KeyConstraintName = keyName,
                     DataType = dataType,
                     Default = defaultValue,
                     GeneratedExpression = generated,
@@ -341,14 +360,15 @@ public abstract partial class SqlRewriter
 
     protected virtual SqlNode VisitAlterColumn(AlterColumnAction node)
     {
+        var collation = VisitOptional(node.Collation);
         var column = Visit(node.Column);
         var dataType = VisitOptional(node.DataType);
         var defaultValue = VisitOptional(node.Default);
-        return ReferenceEquals(column, node.Column)
+        return ReferenceEquals(collation, node.Collation) && ReferenceEquals(column, node.Column)
             && ReferenceEquals(dataType, node.DataType)
             && ReferenceEquals(defaultValue, node.Default)
                 ? node
-                : node with { Column = column, DataType = dataType, Default = defaultValue };
+                : node with { Column = column, DataType = dataType, Default = defaultValue, Collation = collation };
     }
 
     protected virtual SqlNode VisitAddConstraint(AddConstraintAction node) =>

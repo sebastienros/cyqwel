@@ -1,13 +1,16 @@
 using Cyqwel.Ast;
+using Cyqwel.Visitors;
 
 namespace Cyqwel.Validation;
 
-internal sealed class SchemaValidationEngine
+internal sealed partial class SchemaValidationEngine
 {
     private readonly string _sql;
     private readonly SqlSchemaValidationOptions _options;
     private readonly List<SqlValidationDiagnostic> _diagnostics;
     private readonly CatalogIndex _catalog;
+    private Dictionary<string, TableInfo> _tableVariables = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, SqlTypeFamily> _localVariables = new(StringComparer.OrdinalIgnoreCase);
 
     public SchemaValidationEngine(
         string sql,
@@ -26,7 +29,17 @@ internal sealed class SchemaValidationEngine
         if (_options.CheckReferences) ValidateForeignKeys();
 
         var ctes = new Dictionary<string, Projection>(StringComparer.OrdinalIgnoreCase);
-        foreach (var statement in document.Statements)
+        foreach (var batch in document.Batches ?? [new SqlBatch(document.Statements)])
+        {
+            ValidateBatch(batch, ctes);
+        }
+    }
+
+    private void ValidateBatch(SqlBatch batch, IReadOnlyDictionary<string, Projection> ctes)
+    {
+        _tableVariables.Clear();
+        _localVariables.Clear();
+        foreach (var statement in batch.Statements)
         {
             switch (statement)
             {
@@ -48,14 +61,29 @@ internal sealed class SchemaValidationEngine
                 case MergeStatement merge:
                     ValidateMerge(merge, ctes);
                     break;
+                case CreateInlineFunctionStatement function:
+                    ValidateInlineFunction(function, ctes);
+                    break;
+                case CreateViewStatement view:
+                    ValidateQuery(view.Query, ctes, null);
+                    break;
+                case CreateTableStatement table:
+                    ValidateTableDefinition(table, ctes);
+                    break;
                 case CreateProcedureStatement createProcedure:
-                    ValidateProcedureBody(createProcedure.Body, ctes);
+                    ValidateProcedureBody(createProcedure.Body, ctes, createProcedure.Parameters);
                     break;
                 case ReplaceProcedureStatement replaceProcedure:
-                    ValidateProcedureBody(replaceProcedure.Body, ctes);
+                    ValidateProcedureBody(replaceProcedure.Body, ctes, replaceProcedure.Parameters);
                     break;
                 case ProceduralBlock block:
                     ValidateProceduralBlock(block, ctes);
+                    break;
+                case ProceduralIfStatement or ProceduralWhileStatement:
+                    ValidateProceduralBlock(new ProceduralBlock([], [statement]), ctes);
+                    break;
+                default:
+                    ValidateScriptStatement(statement, ctes);
                     break;
             }
         }
@@ -63,13 +91,31 @@ internal sealed class SchemaValidationEngine
 
     private void ValidateProcedureBody(
         ProceduralBlock body,
-        IReadOnlyDictionary<string, Projection> ctes)
-        => ValidateProceduralBlock(body, ctes);
+        IReadOnlyDictionary<string, Projection> ctes,
+        IReadOnlyList<ProcedureParameter> parameters)
+    {
+        var outerVariables = _tableVariables;
+        var outerLocals = _localVariables;
+        _tableVariables = new(StringComparer.OrdinalIgnoreCase);
+        _localVariables = new(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var parameter in parameters)
+                _localVariables[parameter.Name.Value] = SqlTypeFamilies.Classify(parameter.DataType.Name.Value);
+            ValidateProceduralBlock(body, ctes);
+        }
+        finally
+        {
+            _tableVariables = outerVariables;
+            _localVariables = outerLocals;
+        }
+    }
 
     private void ValidateProceduralBlock(
         ProceduralBlock body,
         IReadOnlyDictionary<string, Projection> ctes)
     {
+        foreach (var variable in body.Variables) ValidateLocalDeclaration(variable, ctes);
         foreach (var statement in body.Statements)
         {
             switch (statement)
@@ -80,6 +126,7 @@ internal sealed class SchemaValidationEngine
                 case DeleteStatement delete: ValidateDelete(delete, ctes); break;
                 case MergeStatement merge: ValidateMerge(merge, ctes); break;
                 case ProceduralIfStatement procedureIf:
+                    ValidateExpression(procedureIf.Condition, new Scope(null), ctes);
                     ValidateProceduralBlock(new ProceduralBlock([], procedureIf.Then), ctes);
                     if (procedureIf.Else is not null)
                     {
@@ -87,13 +134,114 @@ internal sealed class SchemaValidationEngine
                     }
                     break;
                 case ProceduralWhileStatement procedureWhile:
+                    ValidateExpression(procedureWhile.Condition, new Scope(null), ctes);
                     ValidateProceduralBlock(new ProceduralBlock([], procedureWhile.Statements), ctes);
                     break;
                 case ProceduralBlock block:
                     ValidateProceduralBlock(block, ctes);
                     break;
+                default:
+                    ValidateScriptStatement(statement, ctes);
+                    break;
             }
         }
+    }
+
+    private void ValidateScriptStatement(SqlStatement statement, IReadOnlyDictionary<string, Projection> ctes)
+    {
+        var scope = new Scope(null);
+        switch (statement)
+        {
+            case CreateSchemaStatement:
+                break;
+            case TableVariableDeclarationStatement declaration:
+                var projection = ValidateTableDefinition(
+                    new CreateTableStatement(new TableName([declaration.Name]), declaration.Elements), ctes);
+                var model = new SqlTableSchema(declaration.Name.Value,
+                    projection.Columns.Select(column => new SqlColumnSchema(
+                        column.Name ?? throw new InvalidOperationException("Declared table columns require names."),
+                        TypeName(column.Type))).ToArray());
+                var computedColumns = declaration.Elements.OfType<ComputedColumnDefinition>()
+                    .Select(column => column.Name.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _tableVariables[declaration.Name.Value] = new TableInfo
+                {
+                    Key = model.Name,
+                    SimpleName = model.Name,
+                    DisplayName = model.Name,
+                    Model = model,
+                    Columns = model.Columns.ToDictionary(column => column.Name,
+                        column => new ColumnInfo(column.Name, SqlTypeFamilies.Classify(column.DataType),
+                            column, computedColumns.Contains(column.Name)), StringComparer.OrdinalIgnoreCase),
+                    ColumnOrder = model.Columns.Select(column => column.Name).ToArray(),
+                };
+                break;
+            case DeclareStatement declaration:
+                foreach (var variable in declaration.Variables)
+                    ValidateLocalDeclaration(variable, ctes);
+                break;
+            case SetVariableStatement assignment:
+                ValidateLocalAssignment(assignment.Name, assignment.Operator, assignment.Value, scope, ctes, assignment);
+                break;
+            case ProceduralReturnStatement { Value: not null } returned:
+                ValidateExpression(returned.Value, scope, ctes);
+                break;
+            case CallProcedureStatement call:
+                foreach (var argument in call.Arguments) ValidateExpression(argument.Value, scope, ctes);
+                if (call.ReturnVariable is not null)
+                    CheckLocalAssignmentType(call.ReturnVariable, SqlTypeFamily.Integer, call);
+                break;
+            case PrintStatement print:
+                ValidateExpression(print.Value, scope, ctes);
+                break;
+            case ExecuteSqlStatement execute:
+                ValidateExpression(execute.Command, scope, ctes);
+                break;
+            case TransactionStatement { Mark: not null } transaction:
+                ValidateExpression(transaction.Mark, scope, ctes);
+                break;
+        }
+    }
+
+    private void ValidateLocalDeclaration(LocalVariable variable, IReadOnlyDictionary<string, Projection> ctes)
+    {
+        _localVariables[variable.Name.Value] = SqlTypeFamilies.Classify(variable.DataType.Name.Value);
+        if (variable.Initializer is not null)
+            ValidateLocalAssignment(variable.Name, SqlAssignmentOperator.Assign, variable.Initializer,
+                new Scope(null), ctes, variable);
+    }
+
+    private void ValidateLocalAssignment(
+        SqlIdentifier name,
+        SqlAssignmentOperator assignmentOperator,
+        SqlExpression value,
+        Scope scope,
+        IReadOnlyDictionary<string, Projection> ctes,
+        SqlNode node)
+    {
+        var assignedValue = assignmentOperator == SqlAssignmentOperator.Assign ? value
+            : new BinaryExpression(new LocalVariableExpression(name), assignmentOperator switch
+            {
+                SqlAssignmentOperator.Add => BinaryOperator.Add,
+                SqlAssignmentOperator.Subtract => BinaryOperator.Subtract,
+                SqlAssignmentOperator.Multiply => BinaryOperator.Multiply,
+                SqlAssignmentOperator.Divide => BinaryOperator.Divide,
+                SqlAssignmentOperator.Modulo => BinaryOperator.Modulo,
+                SqlAssignmentOperator.BitwiseAnd => BinaryOperator.BitwiseAnd,
+                SqlAssignmentOperator.BitwiseOr => BinaryOperator.BitwiseOr,
+                SqlAssignmentOperator.BitwiseXor => BinaryOperator.BitwiseXor,
+                SqlAssignmentOperator.Concatenate => BinaryOperator.Concatenate,
+                _ => throw new ArgumentOutOfRangeException(nameof(assignmentOperator)),
+            }, value);
+        var sourceType = ValidateExpression(assignedValue, scope, ctes);
+        CheckLocalAssignmentType(name, sourceType, node);
+    }
+
+    private void CheckLocalAssignmentType(SqlIdentifier name, SqlTypeFamily sourceType, SqlNode node)
+    {
+        if (!_options.CheckTypes || !_localVariables.TryGetValue(name.Value, out var targetType)
+            || TypesCompatible(targetType, sourceType)) return;
+        AddTypeIssue(SqlValidationCodes.InvalidAssignmentType, SqlValidationCodes.ImplicitAssignmentCast,
+            $"Cannot assign {TypeName(sourceType)} to {TypeName(targetType)} local variable '@{name.Value}'.", node);
     }
 
     private Projection ValidateQuery(
@@ -155,13 +303,15 @@ internal sealed class SchemaValidationEngine
             }
         }
 
-        return query switch
+        var result = query switch
         {
             SelectStatement select => ValidateSelect(select, ctes, outerScope),
             ValuesStatement values => ValidateValues(values, ctes, outerScope),
             SetOperationStatement set => ValidateSetOperation(set, ctes, outerScope),
             _ => Projection.Empty,
         };
+        return query.ResultFormat is null ? result
+            : new Projection([new ProjectedColumn(null, SqlTypeFamily.String)]);
     }
 
     private Projection ValidateSelect(
@@ -175,6 +325,11 @@ internal sealed class SchemaValidationEngine
         var projectedColumns = new List<ProjectedColumn>();
         foreach (var item in select.Projections)
         {
+            if (item.AssignmentTarget is not null)
+            {
+                ValidateLocalAssignment(item.AssignmentTarget, item.AssignmentOperator, item.Expression, scope, ctes, item);
+                continue;
+            }
             if (item.Expression is StarExpression star)
             {
                 ExpandStar(star, scope, projectedColumns);
@@ -334,7 +489,8 @@ internal sealed class SchemaValidationEngine
     private IReadOnlyList<SourceBinding> BindTableSource(
         TableSource source,
         Scope scope,
-        IReadOnlyDictionary<string, Projection> ctes)
+        IReadOnlyDictionary<string, Projection> ctes,
+        bool lateral = false)
     {
         switch (source)
         {
@@ -353,7 +509,19 @@ internal sealed class SchemaValidationEngine
                 }
             case DerivedTable derived:
                 {
-                    var projection = ValidateQuery(derived.Query, ctes, scope.Parent);
+                    var projection = ValidateQuery(derived.Query, ctes, lateral ? scope : scope.Parent);
+                    if (derived.Columns is { Count: > 0 })
+                    {
+                        if (derived.Columns.Count != projection.Columns.Count)
+                        {
+                            AddSchemaIssue(SqlValidationCodes.CteColumnCountMismatch,
+                                $"Derived table '{derived.Alias.Value}' declares {derived.Columns.Count} columns but projects {projection.Columns.Count}.",
+                                derived);
+                        }
+                        projection = new Projection(derived.Columns.Select((column, index) =>
+                            new ProjectedColumn(column.Value, index < projection.Columns.Count
+                                ? projection.Columns[index].Type : SqlTypeFamily.Unknown)).ToArray());
+                    }
                     var binding = SourceBinding.FromProjection(
                         derived.Alias.Value,
                         projection,
@@ -368,10 +536,92 @@ internal sealed class SchemaValidationEngine
 
                     return [binding];
                 }
+            case DerivedMutationTable mutation:
+                {
+                    var projection = ValidateMerge(mutation.Statement, ctes);
+                    if (mutation.Columns is { Count: > 0 })
+                    {
+                        if (mutation.Columns.Count != projection.Columns.Count)
+                            AddSchemaIssue(SqlValidationCodes.CteColumnCountMismatch,
+                                $"Derived MERGE '{mutation.Alias.Value}' declares {mutation.Columns.Count} columns but outputs {projection.Columns.Count}.",
+                                mutation);
+                        projection = new Projection(mutation.Columns.Select((column, index) =>
+                            new ProjectedColumn(column.Value, index < projection.Columns.Count
+                                ? projection.Columns[index].Type : SqlTypeFamily.Unknown)).ToArray());
+                    }
+                    var name = mutation.Alias.Value;
+                    return AddQuerySource(SourceBinding.FromProjection(name, projection, name), mutation, scope);
+                }
+            case ParenthesizedTable parenthesized:
+                {
+                    if (parenthesized.Alias is null)
+                        return BindTableSource(parenthesized.Source, scope, ctes, lateral);
+                    var inputs = BindTableSource(parenthesized.Source, new Scope(lateral ? scope : scope.Parent), ctes, lateral);
+                    var columns = inputs.SelectMany(binding => binding.ColumnOrder.Select(name =>
+                        new ProjectedColumn(name, binding.Columns[name]))).ToArray();
+                    var name = parenthesized.Alias.Value;
+                    return AddQuerySource(SourceBinding.FromProjection(name, new Projection(columns), name), parenthesized, scope);
+                }
+            case TableFunction function:
+                {
+                    foreach (var argument in function.Function.Arguments)
+                        ValidateExpression(argument, scope, ctes);
+                    var name = function.Alias?.Value ?? function.Function.Name.Value;
+                    var binding = function.Columns is { Count: > 0 }
+                        ? SourceBinding.FromProjection(name, new Projection(function.Columns.Select(column =>
+                            new ProjectedColumn(column.Value, SqlTypeFamily.Unknown)).ToArray()), name)
+                        : SourceBinding.Unknown(name, [name]);
+                    return AddQuerySource(binding, function, scope);
+                }
+            case OpenJsonTable json:
+                {
+                    ValidateExpression(json.Expression, scope, ctes);
+                    ValidateExpressionIfPresent(json.Path, scope, ctes);
+                    var columns = json.Schema is { Count: > 0 }
+                        ? json.Schema.Select(column => new ProjectedColumn(column.Name.Value,
+                            SqlTypeFamilies.Classify(column.DataType.Name.Value))).ToArray()
+                        : new[] { new ProjectedColumn("key", SqlTypeFamily.String),
+                            new ProjectedColumn("value", SqlTypeFamily.String),
+                            new ProjectedColumn("type", SqlTypeFamily.Integer) };
+                    var name = json.Alias?.Value ?? "OPENJSON";
+                    return AddQuerySource(SourceBinding.FromProjection(name, new Projection(columns), name), json, scope);
+                }
+            case PivotTable pivot:
+                {
+                    var inputScope = new Scope(lateral ? scope : scope.Parent);
+                    var inputs = BindTableSource(pivot.Source, inputScope, ctes);
+                    var type = ValidateExpression(pivot.Aggregate, inputScope, ctes);
+                    ValidateExpression(pivot.Column, inputScope, ctes);
+                    var consumed = pivot.Aggregate.FindAll<ColumnExpression>()
+                        .Select(column => column.Parts[^1].Value)
+                        .Append(pivot.Column.Parts[^1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var columns = inputs.SelectMany(binding => binding.ColumnOrder.Select(name =>
+                            new ProjectedColumn(name, binding.Columns[name])))
+                        .Where(column => !consumed.Contains(column.Name!))
+                        .Concat(pivot.Values.Select(value => new ProjectedColumn(value.Value, type))).ToArray();
+                    var name = pivot.Alias?.Value ?? inputs.FirstOrDefault()?.Name ?? "PIVOT";
+                    return AddQuerySource(SourceBinding.FromProjection(name, new Projection(columns), name), pivot, scope);
+                }
+            case UnpivotTable unpivot:
+                {
+                    var inputScope = new Scope(lateral ? scope : scope.Parent);
+                    var inputs = BindTableSource(unpivot.Source, inputScope, ctes);
+                    foreach (var column in unpivot.Columns)
+                        ValidateExpression(new ColumnExpression([column]), inputScope, ctes);
+                    var consumed = unpivot.Columns.Select(column => column.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var columns = inputs.SelectMany(binding => binding.ColumnOrder.Select(name =>
+                            new ProjectedColumn(name, binding.Columns[name])))
+                        .Where(column => !consumed.Contains(column.Name!))
+                        .Concat([new ProjectedColumn(unpivot.ValueColumn.Value, SqlTypeFamily.Unknown),
+                            new ProjectedColumn(unpivot.NameColumn.Value, SqlTypeFamily.String)]).ToArray();
+                    var name = unpivot.Alias?.Value ?? inputs.FirstOrDefault()?.Name ?? "UNPIVOT";
+                    return AddQuerySource(SourceBinding.FromProjection(name, new Projection(columns), name), unpivot, scope);
+                }
             case JoinTable join:
                 {
                     var left = BindTableSource(join.Left, scope, ctes);
-                    var right = BindTableSource(join.Right, scope, ctes);
+                    var right = BindTableSource(join.Right, scope, ctes,
+                        join.Kind is JoinKind.CrossApply or JoinKind.OuterApply);
                     if (join.Condition is not null)
                     {
                         RequirePredicate(
@@ -407,15 +657,23 @@ internal sealed class SchemaValidationEngine
         }
     }
 
+    private IReadOnlyList<SourceBinding> AddQuerySource(SourceBinding binding, TableSource source, Scope scope)
+    {
+        if (!scope.Add(binding))
+            AddSchemaIssue(SqlValidationCodes.UnresolvedReference,
+                $"Duplicate table alias or qualifier '{binding.Name}'.", source);
+        return [binding];
+    }
+
     private SourceBinding BindNamedTable(
         NamedTable named,
         IReadOnlyDictionary<string, Projection> ctes)
     {
         var fullName = JoinParts(named.Name.Parts);
         var simpleName = named.Name.Parts[^1].Value;
-        if (ctes.TryGetValue(fullName, out var cte)
+        if (!named.Name.IsVariable && (ctes.TryGetValue(fullName, out var cte)
             || named.Name.Parts.Count == 1
-            && ctes.TryGetValue(simpleName, out cte))
+            && ctes.TryGetValue(simpleName, out cte)))
         {
             return SourceBinding.FromProjection(
                 named.Alias?.Value ?? simpleName,
@@ -424,7 +682,9 @@ internal sealed class SchemaValidationEngine
                 named.Alias is null ? [simpleName, fullName] : [named.Alias.Value]);
         }
 
-        var table = _catalog.Resolve(named.Name);
+        var table = named.Name.IsVariable
+            ? _tableVariables.GetValueOrDefault(simpleName)
+            : _catalog.Resolve(named.Name);
         if (table is null)
         {
             AddSchemaIssue(
@@ -504,6 +764,10 @@ internal sealed class SchemaValidationEngine
                 return LiteralType(literal.Value);
             case CurrentTimestampExpression:
                 return SqlTypeFamily.Timestamp;
+            case MergeActionExpression:
+                return SqlTypeFamily.String;
+            case LocalVariableExpression local:
+                return _localVariables.GetValueOrDefault(local.Name.Value);
             case ParameterExpression parameter:
                 if (parameter.DefaultValue is not null)
                 {
@@ -517,6 +781,27 @@ internal sealed class SchemaValidationEngine
                 return ValidateUnary(unary, scope, ctes);
             case BinaryExpression binary:
                 return ValidateBinary(binary, scope, ctes);
+            case ConvertExpression convert:
+                ValidateExpression(convert.Expression, scope, ctes);
+                ValidateExpressionIfPresent(convert.Style, scope, ctes);
+                return SqlTypeFamilies.Classify(convert.DataType.Name.Value);
+            case JsonArrayAggregateExpression aggregate:
+                ValidateExpression(aggregate.Expression, scope, ctes);
+                if (aggregate.OrderBy is not null)
+                    foreach (var order in aggregate.OrderBy)
+                        ValidateExpression(order.Expression, scope, ctes);
+                return SqlTypeFamily.String;
+            case QuantifiedComparisonExpression quantified:
+                {
+                    var left = ValidateExpression(quantified.Left, scope, ctes);
+                    var projection = ValidateQuery(quantified.Query, ctes, scope);
+                    if (projection.Columns.Count != 1)
+                        AddSchemaIssue(SqlValidationCodes.InvalidScalarSubquery,
+                            "A quantified comparison requires a single-column subquery.", quantified.Query);
+                    else
+                        CheckComparison(quantified, left, projection.Columns[0].Type);
+                    return SqlTypeFamily.Boolean;
+                }
             case BetweenExpression between:
                 return ValidateBetween(between, scope, ctes);
             case InExpression @in:
@@ -701,7 +986,7 @@ internal sealed class SchemaValidationEngine
         }
 
         if (!_options.CheckTypes) return CommonType(left, right);
-        if (binary.Operator == BinaryOperator.Concatenate)
+        if (binary.Operator is BinaryOperator.Concatenate or BinaryOperator.AnsiConcatenate)
         {
             if (!IsStringOrBinaryOrUnknown(left) || !IsStringOrBinaryOrUnknown(right))
             {
@@ -816,6 +1101,7 @@ internal sealed class SchemaValidationEngine
             ValidateOrderBy(function.WithinGroup, scope, ctes, null);
         }
 
+        if (function.Qualifiers is { Count: > 0 }) return SqlTypeFamily.Unknown;
         var name = function.Name.Value.ToUpperInvariant();
         return name switch
         {
@@ -997,7 +1283,8 @@ internal sealed class SchemaValidationEngine
         InsertStatement insert,
         IReadOnlyDictionary<string, Projection> ctes)
     {
-        var target = ResolveTable(insert.Target);
+        ctes = BindMutationCtes(insert.CommonTableExpressions, ctes);
+        var target = ResolveMutationTable(insert.Target, ctes);
         if (target is null) return;
 
         var targetColumns = ResolveInsertColumns(insert, target);
@@ -1048,6 +1335,8 @@ internal sealed class SchemaValidationEngine
         returningScope.Add(SourceBinding.FromTable(target, target.SimpleName, [target.SimpleName]));
         ValidateExpressions(insert.Returning, returningScope, ctes);
         ValidateExpressions(insert.ReturningInto, returningScope, ctes);
+        ValidateExpressionIfPresent(insert.Top, returningScope, ctes);
+        ValidateMutationOutput(insert.Output, target, returningScope, ctes, allowInserted: true, allowDeleted: false);
     }
 
     private IReadOnlyList<ColumnInfo> ResolveInsertColumns(
@@ -1062,6 +1351,7 @@ internal sealed class SchemaValidationEngine
     {
         if (identifiers is null) return target.ColumnOrder
             .Select(column => target.Columns[column])
+            .Where(column => !column.IsComputed)
             .ToArray();
 
         var columns = new List<ColumnInfo>();
@@ -1087,11 +1377,14 @@ internal sealed class SchemaValidationEngine
         UpdateStatement update,
         IReadOnlyDictionary<string, Projection> ctes)
     {
-        var target = ResolveTable(update.Target.Name);
+        ctes = BindMutationCtes(update.CommonTableExpressions, ctes);
+        var target = ResolveMutationTarget(update.Target, update.From, ctes);
         var scope = new Scope(null);
+        if (update.From is not null) BindTableSource(update.From, scope, ctes);
         if (target is not null)
         {
-            scope.Add(SourceBinding.FromTable(
+            if (scope.FindQualifier(update.Target.Alias?.Value ?? update.Target.Name.Parts[^1].Value) is null)
+                scope.Add(SourceBinding.FromTable(
                 target,
                 update.Target.Alias?.Value ?? target.SimpleName,
                 update.Target.Alias is null
@@ -1099,7 +1392,6 @@ internal sealed class SchemaValidationEngine
                     : [update.Target.Alias.Value]));
         }
 
-        if (update.From is not null) BindTableSource(update.From, scope, ctes);
         foreach (var assignment in update.Assignments)
         {
             var valueType = ValidateExpression(assignment.Value, scope, ctes);
@@ -1126,17 +1418,22 @@ internal sealed class SchemaValidationEngine
 
         ValidateExpressions(update.Returning, scope, ctes);
         ValidateExpressions(update.ReturningInto, scope, ctes);
+        ValidateExpressionIfPresent(update.Top, scope, ctes);
+        ValidateMutationOutput(update.Output, target, scope, ctes, allowInserted: true, allowDeleted: true);
     }
 
     private void ValidateDelete(
         DeleteStatement delete,
         IReadOnlyDictionary<string, Projection> ctes)
     {
-        var target = ResolveTable(delete.Target.Name);
+        ctes = BindMutationCtes(delete.CommonTableExpressions, ctes);
+        var target = ResolveMutationTarget(delete.Target, delete.From, ctes);
         var scope = new Scope(null);
+        if (delete.From is not null) BindTableSource(delete.From, scope, ctes);
         if (target is not null)
         {
-            scope.Add(SourceBinding.FromTable(
+            if (scope.FindQualifier(delete.Target.Alias?.Value ?? delete.Target.Name.Parts[^1].Value) is null)
+                scope.Add(SourceBinding.FromTable(
                 target,
                 delete.Target.Alias?.Value ?? target.SimpleName,
                 delete.Target.Alias is null
@@ -1152,14 +1449,17 @@ internal sealed class SchemaValidationEngine
 
         ValidateExpressions(delete.Returning, scope, ctes);
         ValidateExpressions(delete.ReturningInto, scope, ctes);
+        ValidateExpressionIfPresent(delete.Top, scope, ctes);
+        ValidateMutationOutput(delete.Output, target, scope, ctes, allowInserted: false, allowDeleted: true);
     }
 
-    private void ValidateMerge(
+    private Projection ValidateMerge(
         MergeStatement merge,
         IReadOnlyDictionary<string, Projection> ctes)
     {
+        ctes = BindMutationCtes(merge.CommonTableExpressions, ctes);
         var scope = new Scope(null);
-        var target = ResolveTable(merge.Target.Name);
+        var target = ResolveMutationTable(merge.Target.Name, ctes);
         if (target is not null)
         {
             scope.Add(SourceBinding.FromTable(
@@ -1236,11 +1536,15 @@ internal sealed class SchemaValidationEngine
 
         ValidateExpressions(merge.Returning, scope, ctes);
         ValidateExpressions(merge.ReturningInto, scope, ctes);
+        ValidateExpressionIfPresent(merge.Top, scope, ctes);
+        return ValidateMutationOutput(merge.Output, target, scope, ctes, allowInserted: true, allowDeleted: true, allowAction: true);
     }
 
     private TableInfo? ResolveTable(TableName name)
     {
-        var table = _catalog.Resolve(name);
+        var table = name.IsVariable
+            ? _tableVariables.GetValueOrDefault(name.Parts[^1].Value)
+            : _catalog.Resolve(name);
         if (table is null)
         {
             AddSchemaIssue(
@@ -1254,6 +1558,12 @@ internal sealed class SchemaValidationEngine
 
     private void CheckAssignment(ColumnInfo target, SqlTypeFamily source, SqlNode node)
     {
+        if (target.IsComputed)
+        {
+            AddSchemaIssue(SqlValidationCodes.InvalidAssignmentType,
+                $"Computed column '{target.Name}' cannot be assigned.", node);
+            return;
+        }
         if (!_options.CheckTypes || TypesCompatible(target.Type, source)) return;
         AddTypeIssue(
             SqlValidationCodes.InvalidAssignmentType,
@@ -1809,7 +2119,7 @@ internal sealed class SchemaValidationEngine
                 true);
     }
 
-    private sealed record ColumnInfo(string Name, SqlTypeFamily Type, SqlColumnSchema Model);
+    private sealed record ColumnInfo(string Name, SqlTypeFamily Type, SqlColumnSchema Model, bool IsComputed = false);
 
     private sealed class TableInfo
     {
