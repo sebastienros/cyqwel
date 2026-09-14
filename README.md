@@ -25,6 +25,12 @@ provenance, fixture gates, and the unfiltered baseline.
 dotnet add package Cyqwel
 ```
 
+Preview packages are published to [Feedz](https://f.feedz.io/sebastienros/cyqwel/nuget/index.json) after a successful Linux build and test run for each push to `main`. Versions use the `preview-<GitHub run number>` suffix.
+
+```bash
+dotnet add package Cyqwel --prerelease --source https://f.feedz.io/sebastienros/cyqwel/nuget/index.json
+```
+
 ## Parse SQL
 
 Select a dialect when the input uses dialect-specific syntax:

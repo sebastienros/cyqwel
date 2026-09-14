@@ -1,5 +1,8 @@
 name: Build
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ main ]
@@ -41,3 +44,18 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Cyqwel.Tests/Cyqwel.Tests.csproj --configuration Release --no-build
+
+      - name: Pack preview packages
+        if: github.repository == 'sebastienros/cyqwel' && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
+        run: dotnet pack src/Cyqwel/Cyqwel.csproj --output artifacts --configuration Release -p:VersionSuffix=preview-${{ github.run_number }} -p:ContinuousIntegrationBuild=True
+
+      - name: Push preview packages to Feedz
+        if: github.repository == 'sebastienros/cyqwel' && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          FEEDZ_IO_API_KEY: ${{ secrets.FEEDZ_IO_API_KEY }}
+        run: |
+          set -euo pipefail
+          for package in artifacts/*.nupkg; do
+            dotnet nuget push "$package" --api-key "$FEEDZ_IO_API_KEY" --source https://f.feedz.io/sebastienros/cyqwel/nuget/index.json --skip-duplicate
+          done
