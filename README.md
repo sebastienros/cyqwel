@@ -2,6 +2,8 @@
 
 # Cyqwel
 
+[![NuGet.org](https://img.shields.io/nuget/v/Cyqwel.svg?label=nuget.org)](https://www.nuget.org/packages/Cyqwel) [![Feedz preview version](https://img.shields.io/endpoint?url=https%3A%2F%2Ff.feedz.io%2Fsebastienros%2Fcyqwel%2Fshield%2FCyqwel%2Flatest)](https://feedz.io/org/sebastienros/repository/cyqwel/packages/Cyqwel)
+
 Cyqwel is a dialect-neutral SQL toolkit for .NET. It parses SQL into an immutable C# syntax tree that can be inspected, transformed, validated, generated for another dialect, or created with fluent builders.
 
 ## Features
@@ -25,7 +27,7 @@ provenance, fixture gates, and the unfiltered baseline.
 dotnet add package Cyqwel
 ```
 
-Preview packages are published to [Feedz](https://f.feedz.io/sebastienros/cyqwel/nuget/index.json) after a successful Linux build and test run for each push to `main`. Versions use the `preview-<GitHub run number>` suffix.
+Preview packages are published to [Feedz](https://f.feedz.io/sebastienros/cyqwel/nuget/index.json) after a successful Linux build and test run for each push to `main`. Versions use the `preview.<GitHub run number>` suffix.
 
 ```bash
 dotnet add package Cyqwel --prerelease --source https://f.feedz.io/sebastienros/cyqwel/nuget/index.json
