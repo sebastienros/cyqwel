@@ -29,6 +29,14 @@ public static partial class SqlParser
     {
         var comma = Terms.Char(',');
         var dot = Terms.Char('.');
+
+        // Separated fails on a zero-width first value, so leading omitted parts are read before it.
+        Parser<IReadOnlyList<SqlIdentifier>> TSqlNameParts(Parser<SqlIdentifier> part) =>
+            ZeroOrMany(dot)
+                .And(Separated(dot, part.Or(Not(Not(dot)).Then(new SqlIdentifier("") { IsOmitted = true }))))
+                .Then<IReadOnlyList<SqlIdentifier>>(value =>
+                    [.. value.Item1.Select(_ => new SqlIdentifier("") { IsOmitted = true }), .. value.Item2])
+                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted);
         var semicolon = Terms.Char(';');
         var leftParenthesis = Terms.Char('(');
         var rightParenthesis = Terms.Char(')');
@@ -263,11 +271,8 @@ public static partial class SqlParser
         var tableIdentifierParts = Separated(dot, tableIdentifier);
         if (syntax.SupportsTSqlExtensions)
         {
-            var omittedPart = Not(Not(dot)).Then(new SqlIdentifier("") { IsOmitted = true });
-            identifierParts = Separated(dot, simpleIdentifier.Or(omittedPart))
-                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted);
-            tableIdentifierParts = Separated(dot, tableIdentifier.Or(omittedPart))
-                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted);
+            identifierParts = TSqlNameParts(simpleIdentifier);
+            tableIdentifierParts = TSqlNameParts(tableIdentifier);
         }
 
         var tableName = tableIdentifierParts.Then(parts => new TableName(parts));
@@ -387,8 +392,7 @@ public static partial class SqlParser
                 .Or(REPLACE.Then(new SqlIdentifier("REPLACE")))
             : simpleIdentifier;
         var functionName = syntax.SupportsTSqlExtensions
-            ? Separated(dot, functionIdentifier.Or(Not(Not(dot)).Then(new SqlIdentifier("") { IsOmitted = true })))
-                .When((_, parts) => parts.Count <= 4 && !parts[^1].IsOmitted)
+            ? TSqlNameParts(functionIdentifier)
             : simpleIdentifier.Then<IReadOnlyList<SqlIdentifier>>(name => [name]);
         var functionCore = functionName
             .And(Between(leftParenthesis, functionArguments, rightParenthesis))
@@ -2498,8 +2502,7 @@ public static partial class SqlParser
         return document.WithComments(comments => comments
             .WithWhiteSpaceOrNewLine()
             .WithSingleLine("--")
-            .WithMultiLine("/*", "*/"))
-            .Compile();
+            .WithMultiLine("/*", "*/"));
     }
 
     public static SqlDocument Parse(
