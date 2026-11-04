@@ -1644,7 +1644,8 @@ public static partial class SqlParser
             : Fail<TableConstraint>();
         var indexTableElement = constraintName
             .And(UNIQUE.Optional())
-            .And(KEY.Then(true).Or(INDEX.Then(false)))
+            // "key VARCHAR(10)" is a column named key: index columns are never bare sizes.
+            .And(KEY.AndSkip(Not(simpleIdentifier.And(dataTypeArguments))).Then(true).Or(INDEX.Then(false)))
             .And(simpleIdentifier.Optional())
             .And(clustering)
             .And(Between(leftParenthesis, Separated(comma, indexColumn), rightParenthesis))
@@ -2715,12 +2716,12 @@ public static partial class SqlParser
             "DEFAULT", "COLLATE", "EXTRACT", "INTERVAL", "TRY_CAST", "FILTER", "WITHIN",
             "WINDOW", "QUALIFY", "RANGE", "GROUPS", "UNBOUNDED", "PRECEDING", "CURRENT", "FOLLOWING",
             "UNKNOWN", "USING", "NATURAL", "MERGE", "MATCHED",
-            "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE", "TEMPORARY", "IF", "REPLACE",
-            "VIEW", "INDEX", "UNIQUE", "SEQUENCE", "COLUMN", "CONSTRAINT", "PRIMARY", "KEY",
-            "FOREIGN", "REFERENCES", "CHECK", "CASCADE", "RESTRICT", "NO", "ACTION", "RENAME",
-            "TO", "TYPE", "GENERATED", "ALWAYS", "IDENTITY", "VIRTUAL", "STORED", "ADD",
-            "CYCLE", "CACHE", "MINVALUE", "MAXVALUE", "INCREMENT",
+            "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE", "IF", "REPLACE",
+            "VIEW", "INDEX", "UNIQUE", "COLUMN", "CONSTRAINT", "PRIMARY",
+            "FOREIGN", "REFERENCES", "CHECK", "TO",
         };
+
+        words.UnionWith(syntax.ReservedClauseKeywords);
 
         if (syntax.SupportsTop)
         {
@@ -2730,7 +2731,6 @@ public static partial class SqlParser
         if (syntax.SupportsTSqlExtensions)
         {
             words.UnionWith(["APPLY", "FOR", "OPTION", "PIVOT", "UNPIVOT", "HASH", "LOOP", "ANY", "SOME", "TABLESAMPLE"]);
-            words.Remove("ACTION");
         }
 
         if (syntax.SupportsLimit || syntax.SupportsLimitComma)
