@@ -306,10 +306,10 @@ public class ParserTests
             Sql.Select("a").From("t3").Build());
 
         Assert.Equal(
-            "(SELECT a FROM \"first\" UNION SELECT a FROM t2) INTERSECT SELECT a FROM t3",
+            "(SELECT a FROM first UNION SELECT a FROM t2) INTERSECT SELECT a FROM t3",
             unionThenIntersect.ToSql());
         Assert.Equal(
-            "SELECT a FROM \"first\" INTERSECT SELECT a FROM t2 UNION SELECT a FROM t3",
+            "SELECT a FROM first INTERSECT SELECT a FROM t2 UNION SELECT a FROM t3",
             intersectThenUnion.ToSql());
     }
 
