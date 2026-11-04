@@ -1,5 +1,6 @@
 using Cyqwel.Ast;
 using Cyqwel.Dialects;
+using Cyqwel.Parsing;
 using Cyqwel.TSqlCompatibility;
 using Cyqwel.Validation;
 using Cyqwel.Visitors;
@@ -72,6 +73,28 @@ public class TSqlFoundationTests
         var generated = document.ToSql(SqlDialects.TSql);
         Assert.DoesNotContain("[]", generated);
         AssertReferenceRoundTrip(sql);
+    }
+
+    [Theory]
+    [InlineData("SELECT .dbo.f(1)")]
+    [InlineData("SELECT ..dbo.f(1)")]
+    [InlineData("SELECT .dbo.t.c FROM t")]
+    public void Leading_omitted_name_parts_are_preserved_outside_table_names(string sql)
+    {
+        var document = SqlDialects.TSql.Parse(sql);
+        var generated = document.ToSql(SqlDialects.TSql);
+        Assert.DoesNotContain("[]", generated);
+        Assert.Equal(sql, generated);
+    }
+
+    [Theory]
+    [InlineData("SELECT * FROM .")]
+    [InlineData("SELECT * FROM ..")]
+    [InlineData("SELECT * FROM t.")]
+    [InlineData("SELECT * FROM ....a.b")]
+    public void Invalid_omitted_name_parts_are_rejected(string sql)
+    {
+        Assert.False(SqlParser.TryParse(sql, SqlDialects.TSql, out _, out _));
     }
 
     [Fact]
