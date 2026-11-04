@@ -31,15 +31,15 @@ public class SqlDialect
     private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "ALL", "AND", "AS", "ASC", "BETWEEN", "BY", "CASE", "CAST", "CROSS", "DELETE",
-        "DESC", "DISTINCT", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE", "FETCH", "FIRST",
+        "DESC", "DISTINCT", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE", "FETCH",
         "FROM", "FULL", "GROUP", "HAVING", "ILIKE", "IN", "INNER", "INSERT", "INTERSECT",
-        "INTO", "IS", "JOIN", "LAST", "LEFT", "LIKE", "LIMIT", "NEXT", "NOT", "NULL",
-        "NULLS", "OFFSET", "ON", "ONLY", "OR", "ORDER", "OUTER", "RETURNING", "RIGHT",
+        "INTO", "IS", "JOIN", "LEFT", "LIKE", "LIMIT", "NOT", "NULL",
+        "OFFSET", "ON", "OR", "ORDER", "OUTER", "RETURNING", "RIGHT",
         "ROW", "ROWS", "SELECT", "SET", "THEN", "TOP", "TRUE", "UNION", "UPDATE", "VALUES",
         "WHEN", "WHERE", "WITH", "MERGE", "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE",
-        "VIEW", "INDEX", "CONNECT", "PRIOR", "START", "SIBLINGS",
+        "CONNECT", "PRIOR", "START", "SIBLINGS",
         "PROCEDURE", "CALL", "EXEC", "EXECUTE", "BEGIN", "ATOMIC", "DECLARE", "OUTPUT",
-        "OUT", "INOUT", "LANGUAGE", "RETURN", "LEAVE", "WHILE", "LOOP", "DO", "BREAK",
+        "RETURN", "LEAVE", "WHILE", "LOOP", "DO", "BREAK",
         "CONTINUE", "EXIT", "ITERATE",
     };
 
@@ -272,7 +272,8 @@ public static class SqlDialects
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Plus;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
-            ReservedClauseKeywords = ClauseKeywords("ADD", "CASCADE", "IDENTITY", "KEY", "RESTRICT"),
+            // https://learn.microsoft.com/sql/t-sql/language-elements/reserved-keywords-transact-sql
+            ReservedClauseKeywords = ClauseKeywords("ADD", "CASCADE", "IDENTITY", "INDEX", "KEY", "RESTRICT", "VIEW"),
             SupportsTSqlExtensions = true,
             SupportsDerivedTableColumnAliases = true,
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote | SqlIdentifierQuoteStyle.Brackets,
@@ -334,7 +335,8 @@ public static class SqlDialects
 
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
-            ReservedClauseKeywords = ClauseKeywords("ADD"),
+            // https://www.sqlite.org/lang_keywords.html, less the words its parser falls back to identifiers for
+            ReservedClauseKeywords = ClauseKeywords("ADD", "INDEX"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote
                 | SqlIdentifierQuoteStyle.Backtick
                 | SqlIdentifierQuoteStyle.Brackets,
@@ -462,6 +464,8 @@ public static class SqlDialects
         public override bool SupportsILike => true;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            // https://www.postgresql.org/docs/current/sql-keywords-appendix.html
+            ReservedClauseKeywords = ClauseKeywords("ANALYZE", "ONLY"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.DollarNumbered,
             SupportsDerivedTableColumnAliases = true,
@@ -509,7 +513,10 @@ public static class SqlDialects
         public override bool UsesSqlSecurityForViews => true;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
-            ReservedClauseKeywords = ClauseKeywords("ADD", "CASCADE", "GENERATED", "KEY", "MAXVALUE", "RENAME", "RESTRICT", "STORED", "VIRTUAL"),
+            // https://dev.mysql.com/doc/refman/8.4/en/keywords.html
+            ReservedClauseKeywords = ClauseKeywords(
+                "ADD", "ANALYZE", "CASCADE", "EXPLAIN", "GENERATED", "GROUPS", "INDEX", "INOUT", "KEY",
+                "MAXVALUE", "OUT", "RENAME", "RESTRICT", "SQL", "STORED", "VIRTUAL"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.Backtick,
             ParameterStyles = SqlParameterStyle.QuestionMark,
             SupportsDoubleQuotedStrings = true,
@@ -545,7 +552,8 @@ public static class SqlDialects
         public override bool SupportsTableAliasAs => false;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
-            ReservedClauseKeywords = ClauseKeywords("ADD", "INCREMENT", "RENAME"),
+            // https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/Oracle-SQL-Reserved-Words.html
+            ReservedClauseKeywords = ClauseKeywords("ADD", "INCREMENT", "INDEX", "RENAME", "VIEW"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.ColonNamed,
             SupportsNationalStringLiterals = true,

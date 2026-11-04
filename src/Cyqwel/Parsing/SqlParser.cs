@@ -832,7 +832,8 @@ public static partial class SqlParser
                 .Then(value => (Start: value.Item1, End: (WindowFrameBound?)value.Item2))
                 .Or(windowFrameBound.Then(value => (Start: value, End: (WindowFrameBound?)null))))
             .Then(value => new WindowFrame(value.Item1, value.Item2.Start, value.Item2.End));
-        var baseWindowIdentifier = Not(PARTITION).SkipAnd(simpleIdentifier);
+        // "GROUPS 1 PRECEDING" is a frame, while "groups ORDER BY x" extends a window named groups.
+        var baseWindowIdentifier = Not(PARTITION).SkipAnd(Not(windowFrame)).SkipAnd(simpleIdentifier);
         var namedWindowSpecification = baseWindowIdentifier
             .And(windowPartitionBy.Optional())
             .And(windowOrderBy.Optional())
@@ -1645,7 +1646,7 @@ public static partial class SqlParser
         var indexTableElement = constraintName
             .And(UNIQUE.Optional())
             // "key VARCHAR(10)" is a column named key: index columns are never bare sizes.
-            .And(KEY.AndSkip(Not(simpleIdentifier.And(dataTypeArguments))).Then(true).Or(INDEX.Then(false)))
+            .And(KEY.Then(true).Or(INDEX.Then(false)).AndSkip(Not(simpleIdentifier.And(dataTypeArguments))))
             .And(simpleIdentifier.Optional())
             .And(clustering)
             .And(Between(leftParenthesis, Separated(comma, indexColumn), rightParenthesis))
@@ -2713,11 +2714,11 @@ public static partial class SqlParser
             "OR", "NOT", "BETWEEN", "IN", "IS", "LIKE", "TRUE", "FALSE", "NULL",
             "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "CAST", "INSERT", "INTO",
             "VALUES", "UPDATE", "SET", "DELETE",
-            "DEFAULT", "COLLATE", "EXTRACT", "INTERVAL", "TRY_CAST", "FILTER", "WITHIN",
-            "WINDOW", "QUALIFY", "RANGE", "GROUPS", "UNBOUNDED", "PRECEDING", "CURRENT", "FOLLOWING",
-            "UNKNOWN", "USING", "NATURAL", "MERGE", "MATCHED",
+            "DEFAULT", "COLLATE", "EXTRACT", "INTERVAL", "TRY_CAST", "WITHIN",
+            "WINDOW", "QUALIFY", "RANGE", "CURRENT",
+            "USING", "NATURAL", "MERGE",
             "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE", "IF", "REPLACE",
-            "VIEW", "INDEX", "UNIQUE", "COLUMN", "CONSTRAINT", "PRIMARY",
+            "UNIQUE", "COLUMN", "CONSTRAINT", "PRIMARY",
             "FOREIGN", "REFERENCES", "CHECK", "TO",
         };
 
@@ -2725,12 +2726,12 @@ public static partial class SqlParser
 
         if (syntax.SupportsTop)
         {
-            words.UnionWith(["TOP", "PERCENT", "TIES"]);
+            words.UnionWith(["TOP", "PERCENT"]);
         }
 
         if (syntax.SupportsTSqlExtensions)
         {
-            words.UnionWith(["APPLY", "FOR", "OPTION", "PIVOT", "UNPIVOT", "HASH", "LOOP", "ANY", "SOME", "TABLESAMPLE"]);
+            words.UnionWith(["APPLY", "FOR", "OPTION", "PIVOT", "UNPIVOT", "LOOP", "ANY", "SOME", "TABLESAMPLE"]);
         }
 
         if (syntax.SupportsLimit || syntax.SupportsLimitComma)
@@ -2745,7 +2746,7 @@ public static partial class SqlParser
 
         if (syntax.SupportsOffsetFetch)
         {
-            words.UnionWith(["ROW", "ROWS", "FETCH", "NEXT", "FIRST", "ONLY"]);
+            words.UnionWith(["ROW", "ROWS", "FETCH"]);
         }
 
         if (syntax.SupportsReturning) words.Add("RETURNING");
@@ -2758,28 +2759,13 @@ public static partial class SqlParser
             words.UnionWith(["CONNECT", "START", "NOCYCLE", "PRIOR", "CONNECT_BY_ROOT", "SIBLINGS"]);
         }
 
-        if (syntax.SupportsExplainOptions)
-        {
-            words.UnionWith(["EXPLAIN", "ANALYZE"]);
-        }
-
-        if (syntax.SupportsCreateViewSecurity)
-        {
-            words.UnionWith(["SQL", "SECURITY", "DEFINER", "INVOKER"]);
-        }
-
         if (syntax.SupportsStoredProcedures || syntax.SupportsAnonymousProceduralBlocks)
         {
             words.UnionWith([
                 "PROCEDURE", "EXEC", "EXECUTE", "BEGIN", "ATOMIC", "DECLARE",
-                "OUTPUT", "OUT", "INOUT", "LANGUAGE", "RETURN", "LEAVE",
+                "OUTPUT", "RETURN", "LEAVE",
                 "WHILE", "LOOP", "DO", "BREAK", "CONTINUE", "EXIT", "ITERATE",
             ]);
-        }
-
-        if (syntax.SupportsNullOrdering)
-        {
-            words.UnionWith(["NULLS", "FIRST", "LAST"]);
         }
 
         if (syntax.SupportsTSqlExtensions)
