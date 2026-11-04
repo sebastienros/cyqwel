@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Cyqwel.Benchmarks/Cyqwel.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Cyqwel/Cyqwel.csproj" />
   </Folder>
