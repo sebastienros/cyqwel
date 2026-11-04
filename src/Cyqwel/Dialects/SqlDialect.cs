@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using Cyqwel.Ast;
 using Cyqwel.Generation;
 using Cyqwel.Parsing;
@@ -36,7 +37,7 @@ public class SqlDialect
         "NULLS", "OFFSET", "ON", "ONLY", "OR", "ORDER", "OUTER", "RETURNING", "RIGHT",
         "ROW", "ROWS", "SELECT", "SET", "THEN", "TOP", "TRUE", "UNION", "UPDATE", "VALUES",
         "WHEN", "WHERE", "WITH", "MERGE", "CREATE", "ALTER", "DROP", "TRUNCATE", "TABLE",
-        "VIEW", "INDEX", "SEQUENCE", "CONNECT", "PRIOR", "START", "SIBLINGS",
+        "VIEW", "INDEX", "CONNECT", "PRIOR", "START", "SIBLINGS",
         "PROCEDURE", "CALL", "EXEC", "EXECUTE", "BEGIN", "ATOMIC", "DECLARE", "OUTPUT",
         "OUT", "INOUT", "LANGUAGE", "RETURN", "LEAVE", "WHILE", "LOOP", "DO", "BREAK",
         "CONTINUE", "EXIT", "ITERATE",
@@ -183,7 +184,8 @@ public class SqlDialect
         identifier.IsQuoted
         || identifier.Value.Length == 0
         || !IsSafeIdentifier(identifier.Value)
-        || ReservedKeywords.Contains(identifier.Value);
+        || ReservedKeywords.Contains(identifier.Value)
+        || ParserOptions.ReservedClauseKeywords.Contains(identifier.Value);
 
     private static bool IsSafeIdentifier(string value)
     {
@@ -231,6 +233,9 @@ public class SqlDialect
 
 public static class SqlDialects
 {
+    private static FrozenSet<string> ClauseKeywords(params string[] words) =>
+        words.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     public static SqlDialect Generic { get; } = new GenericDialect();
 
     public static SqlDialect TSql { get; } = new TSqlDialect();
@@ -267,6 +272,7 @@ public static class SqlDialects
         public override SqlConcatenationStyle ConcatenationStyle => SqlConcatenationStyle.Plus;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            ReservedClauseKeywords = ClauseKeywords("ADD", "CASCADE", "IDENTITY", "KEY", "RESTRICT"),
             SupportsTSqlExtensions = true,
             SupportsDerivedTableColumnAliases = true,
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote | SqlIdentifierQuoteStyle.Brackets,
@@ -328,6 +334,7 @@ public static class SqlDialects
 
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            ReservedClauseKeywords = ClauseKeywords("ADD"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote
                 | SqlIdentifierQuoteStyle.Backtick
                 | SqlIdentifierQuoteStyle.Brackets,
@@ -502,6 +509,7 @@ public static class SqlDialects
         public override bool UsesSqlSecurityForViews => true;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            ReservedClauseKeywords = ClauseKeywords("ADD", "CASCADE", "GENERATED", "KEY", "MAXVALUE", "RENAME", "RESTRICT", "STORED", "VIRTUAL"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.Backtick,
             ParameterStyles = SqlParameterStyle.QuestionMark,
             SupportsDoubleQuotedStrings = true,
@@ -537,6 +545,7 @@ public static class SqlDialects
         public override bool SupportsTableAliasAs => false;
         public override SqlDialectParserOptions ParserOptions { get; } = new()
         {
+            ReservedClauseKeywords = ClauseKeywords("ADD", "INCREMENT", "RENAME"),
             IdentifierQuotes = SqlIdentifierQuoteStyle.DoubleQuote,
             ParameterStyles = SqlParameterStyle.ColonNamed,
             SupportsNationalStringLiterals = true,

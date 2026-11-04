@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace Cyqwel.Parsing;
 
 [Flags]
@@ -174,4 +176,10 @@ public sealed record SqlDialectParserOptions
     public SqlCurrentTimestampSyntax CurrentTimestampSyntax { get; init; }
 
     public SqlDoublePipeBehavior DoublePipeBehavior { get; init; } = SqlDoublePipeBehavior.Concatenate;
+
+    /// <summary>
+    /// Clause keywords the parser recognizes by position that the dialect also reserves,
+    /// such as MySQL's CASCADE. Any other clause keyword is a valid unquoted identifier.
+    /// </summary>
+    internal IReadOnlySet<string> ReservedClauseKeywords { get; init; } = FrozenSet<string>.Empty;
 }
