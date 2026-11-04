@@ -58,3 +58,5 @@ nunit-*.xml
 
 # Python campaign tooling
 __pycache__/
+
+.vs/
